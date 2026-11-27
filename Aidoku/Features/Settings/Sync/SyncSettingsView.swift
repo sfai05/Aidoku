@@ -72,11 +72,15 @@ struct SyncSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(viewModel.statusTitle)
                         .font(.headline)
-                    if let server = viewModel.status.serverURL, !server.isEmpty {
+                    if viewModel.isSignedIn, let server = viewModel.status.serverURL, !server.isEmpty {
                         Text(server)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                    } else if !viewModel.isSignedIn {
+                        Text(ForkL10n.string("SYNC_SETUP_SUBTITLE"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -89,70 +93,74 @@ struct SyncSettingsView: View {
             }
             .padding(.vertical, 2)
 
-            if let banner = viewModel.bannerMessage {
+            if let banner = viewModel.statusBanner {
                 SyncBannerView(banner: banner)
             } else if let errorMessage = viewModel.status.lastErrorMessage, viewModel.status.indicator == .error {
                 SyncBannerView(banner: SyncBannerMessage(tone: .error, text: errorMessage))
             }
 
-            Toggle(
-                ForkL10n.string("SYNC_ENABLE_TOGGLE"),
-                isOn: Binding(
-                    get: { viewModel.isEnabled },
-                    set: { newValue in
-                        Task {
-                            await viewModel.setEnabled(newValue)
+            if viewModel.isSignedIn {
+                Toggle(
+                    ForkL10n.string("SYNC_ENABLE_TOGGLE"),
+                    isOn: Binding(
+                        get: { viewModel.isEnabled },
+                        set: { newValue in
+                            Task {
+                                await viewModel.setEnabled(newValue)
+                            }
                         }
-                    }
+                    )
                 )
-            )
-            .disabled(viewModel.isBusy)
+                .disabled(viewModel.isBusy)
 
-            keyValueRow(
-                title: ForkL10n.string("SYNC_SERVER_LABEL"),
-                value: {
-                    if let server = viewModel.status.serverURL, !server.isEmpty {
-                        return server
-                    }
-                    return ForkL10n.string("SYNC_NOT_CONFIGURED")
-                }()
-            )
-            keyValueRow(
-                title: ForkL10n.string("SYNC_ACCOUNT_LABEL"),
-                value: viewModel.signedInEmail ?? ForkL10n.string("SYNC_NOT_SIGNED_IN")
-            )
-            keyValueRow(
-                title: ForkL10n.string("SYNC_LAST_SYNCED_LABEL"),
-                value: formattedLastSyncedDate
-            )
-            keyValueRow(
-                title: ForkL10n.string("SYNC_REVISION_LABEL"),
-                value: viewModel.status.lastSyncedRevision > 0
-                    ? "#\(viewModel.status.lastSyncedRevision)"
-                    : "—"
-            )
+                keyValueRow(
+                    title: ForkL10n.string("SYNC_SERVER_LABEL"),
+                    value: {
+                        if let server = viewModel.status.serverURL, !server.isEmpty {
+                            return server
+                        }
+                        return ForkL10n.string("SYNC_NOT_CONFIGURED")
+                    }()
+                )
+                keyValueRow(
+                    title: ForkL10n.string("SYNC_ACCOUNT_LABEL"),
+                    value: viewModel.signedInEmail ?? ForkL10n.string("SYNC_NOT_SIGNED_IN")
+                )
+                keyValueRow(
+                    title: ForkL10n.string("SYNC_LAST_SYNCED_LABEL"),
+                    value: formattedLastSyncedDate
+                )
+                keyValueRow(
+                    title: ForkL10n.string("SYNC_REVISION_LABEL"),
+                    value: viewModel.status.lastSyncedRevision > 0
+                        ? "#\(viewModel.status.lastSyncedRevision)"
+                        : "—"
+                )
 
-            LazyVGrid(columns: statsColumns, spacing: 8) {
-                statTile(title: ForkL10n.string("SYNC_STATS_LIBRARY"), value: viewModel.status.stats.libraryCount)
-                statTile(title: ForkL10n.string("SYNC_STATS_HISTORY"), value: viewModel.status.stats.historyCount)
-                statTile(title: ForkL10n.string("SYNC_STATS_CATEGORIES"), value: viewModel.status.stats.categoryCount)
-                statTile(title: ForkL10n.string("SYNC_STATS_TRACKERS"), value: viewModel.status.stats.trackCount)
-                statTile(title: ForkL10n.string("SYNC_STATS_SESSIONS"), value: viewModel.status.stats.readingSessionCount)
-            }
-            .padding(.vertical, 4)
-
-            Button {
-                Task {
-                    await viewModel.syncNow()
+                LazyVGrid(columns: statsColumns, spacing: 8) {
+                    statTile(title: ForkL10n.string("SYNC_STATS_LIBRARY"), value: viewModel.status.stats.libraryCount)
+                    statTile(title: ForkL10n.string("SYNC_STATS_HISTORY"), value: viewModel.status.stats.historyCount)
+                    statTile(title: ForkL10n.string("SYNC_STATS_CATEGORIES"), value: viewModel.status.stats.categoryCount)
+                    statTile(title: ForkL10n.string("SYNC_STATS_TRACKERS"), value: viewModel.status.stats.trackCount)
+                    statTile(title: ForkL10n.string("SYNC_STATS_SESSIONS"), value: viewModel.status.stats.readingSessionCount)
                 }
-            } label: {
-                Label(ForkL10n.string("SYNC_NOW_BUTTON"), systemImage: "arrow.clockwise")
+                .padding(.vertical, 4)
+
+                Button {
+                    Task {
+                        await viewModel.syncNow()
+                    }
+                } label: {
+                    Label(ForkL10n.string("SYNC_NOW_BUTTON"), systemImage: "arrow.clockwise")
+                }
+                .disabled(!viewModel.isEnabled || !viewModel.isSignedIn || viewModel.isBusy)
             }
-            .disabled(!viewModel.isEnabled || !viewModel.isSignedIn || viewModel.isBusy)
         } header: {
             Text(ForkL10n.string("SYNC_SECTION_STATUS"))
         } footer: {
-            Text(ForkL10n.string("SYNC_ENABLE_FOOTER"))
+            if viewModel.isSignedIn {
+                Text(ForkL10n.string("SYNC_ENABLE_FOOTER"))
+            }
         }
     }
 
@@ -167,6 +175,7 @@ struct SyncSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit {
+                        dismissKeyboard()
                         Task {
                             await viewModel.saveConnectionSettings()
                         }
@@ -188,6 +197,7 @@ struct SyncSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit {
+                        dismissKeyboard()
                         Task {
                             await viewModel.saveConnectionSettings(
                                 requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -197,6 +207,7 @@ struct SyncSettingsView: View {
             }
 
             Button {
+                dismissKeyboard()
                 Task {
                     await viewModel.saveConnectionSettings(
                         requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -211,6 +222,7 @@ struct SyncSettingsView: View {
                 keyValueRow(title: ForkL10n.string("SYNC_EMAIL_LABEL"), value: email)
 
                 Button {
+                    dismissKeyboard()
                     Task {
                         await viewModel.refreshSession()
                     }
@@ -227,6 +239,7 @@ struct SyncSettingsView: View {
                 .disabled(viewModel.isBusy)
 
                 Button(role: .destructive) {
+                    dismissKeyboard()
                     showSignOutConfirm = true
                 } label: {
                     Text(ForkL10n.string("SYNC_SIGN_OUT_BUTTON"))
@@ -241,6 +254,7 @@ struct SyncSettingsView: View {
                 SecureField(ForkL10n.string("SYNC_PASSWORD_LABEL"), text: $viewModel.passwordInput)
 
                 Button {
+                    dismissKeyboard()
                     Task {
                         await viewModel.signIn()
                     }
@@ -261,6 +275,10 @@ struct SyncSettingsView: View {
                         || viewModel.passwordInput.isEmpty
                 )
             }
+
+            if let banner = viewModel.connectionBanner {
+                SyncBannerView(banner: banner)
+            }
         } header: {
             Text(ForkL10n.string("SYNC_SECTION_CONNECTION"))
         } footer: {
@@ -271,6 +289,7 @@ struct SyncSettingsView: View {
     private var healthAndSetupSection: some View {
         Section(ForkL10n.string("SYNC_SECTION_HEALTH")) {
             Button {
+                dismissKeyboard()
                 Task {
                     await viewModel.runHealthCheck()
                 }
@@ -347,7 +366,7 @@ struct SyncSettingsView: View {
             }
 
             Picker(ForkL10n.string("SYNC_DEBOUNCE_LABEL"), selection: $viewModel.autoSyncDebounceSeconds) {
-                ForEach([5, 15, 30, 60], id: \.self) { seconds in
+                ForEach([5, 15, 30, 60, 120], id: \.self) { seconds in
                     Text(ForkL10n.format("SYNC_SECONDS_FORMAT", seconds)).tag(seconds)
                 }
             }
@@ -441,5 +460,9 @@ struct SyncSettingsView: View {
         .padding(.horizontal, 4)
         .background(Color(uiColor: .systemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }

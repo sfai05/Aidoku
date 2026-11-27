@@ -318,7 +318,7 @@ final class SyncConfiguration: @unchecked Sendable {
             lock.lock()
             defer { lock.unlock() }
             let stored = userDefaults.double(forKey: Key.autoSyncDebounceSeconds)
-            return stored > 0 ? min(max(stored, 2), 300) : 15
+            return stored > 0 ? min(max(stored, 2), 300) : 60
         }
         set {
             lock.lock()

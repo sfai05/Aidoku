@@ -69,6 +69,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         contentHideView.removeFromSuperview()
+        // Fork: Clear background sync flag when scene becomes active
+        SyncEngine.shared.handleSceneDidBecomeActive()
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

@@ -19,15 +19,26 @@ enum SyncObservedEvent: Sendable {
 }
 
 @MainActor
-private final class BackgroundTaskBox {
+private final class BackgroundFlushCoordinator {
+    var isInBackground = false
     var identifier: UIBackgroundTaskIdentifier = .invalid
     var workerTask: Task<Void, Never>?
+    var startedSync = false
 
-    func end() {
+    nonisolated init() {}
+
+    func endTask() {
         let currentId = identifier
         identifier = .invalid
         guard currentId != .invalid else { return }
         UIApplication.shared.endBackgroundTask(currentId)
+    }
+
+    func cancelAndEnd() {
+        workerTask?.cancel()
+        workerTask = nil
+        startedSync = false
+        endTask()
     }
 }
 
@@ -169,6 +180,7 @@ actor SyncEngine {
     private let snapshotApplier: SyncSnapshotApplier
     private let nowProvider: @Sendable () -> Date
     private let observerBridge = SyncObserverBridge()
+    private let backgroundCoordinator = BackgroundFlushCoordinator()
 
     private var isOperationActive = false
     private var pendingOperationWaiters: [CheckedContinuation<Void, Never>] = []
@@ -234,38 +246,89 @@ actor SyncEngine {
         }
     }
 
-    nonisolated func handleSceneWillEnterForeground() {
+    @MainActor func handleSceneWillEnterForeground() {
+        backgroundCoordinator.isInBackground = false
+        backgroundCoordinator.endTask()
         Task {
             guard configuration.isEnabled, configuration.autoSyncOnForeground else { return }
             await syncIfNeeded(reason: .foreground)
         }
     }
 
-    @MainActor func handleSceneDidEnterBackground() {
-        tombstoneStore.flushPendingToDisk()
-        let enabled = configuration.isEnabled
-        let hasPending = tombstoneStore.snapshot().hasPendingChanges
-        guard enabled, hasPending else { return }
+    @MainActor func handleSceneDidBecomeActive() {
+        backgroundCoordinator.isInBackground = false
+        backgroundCoordinator.endTask()
+    }
 
-        let box = BackgroundTaskBox()
+    @MainActor func handleSceneDidEnterBackground() {
+        backgroundCoordinator.isInBackground = true
+        tombstoneStore.flushPendingToDisk()
+        guard configuration.isEnabled else { return }
+        scheduleBackgroundFlush(settleDelayNanoseconds: 350_000_000)
+    }
+
+    @MainActor func handleApplicationWillTerminate() {
+        tombstoneStore.flushPendingToDisk()
+        guard configuration.isEnabled, tombstoneStore.snapshot().hasPendingChanges else { return }
+        scheduleBackgroundFlush(settleDelayNanoseconds: 0)
+    }
+
+    @MainActor
+    private func scheduleBackgroundFlush(settleDelayNanoseconds: UInt64) {
+        if backgroundCoordinator.workerTask != nil {
+            if settleDelayNanoseconds == 0 && backgroundCoordinator.startedSync {
+                Task { [weak self] in
+                    await self?.syncIfNeeded(reason: .background)
+                }
+            }
+            return
+        }
+
         let createdId = UIApplication.shared.beginBackgroundTask(withName: "ForkSyncBackgroundFlush") { [weak self] in
             MainActor.assumeIsolated {
-                box.workerTask?.cancel()
-                box.end()
+                self?.backgroundCoordinator.cancelAndEnd()
             }
             Task {
                 await self?.cancelActiveSync()
             }
         }
-        box.identifier = createdId
+        backgroundCoordinator.identifier = createdId
         guard createdId != .invalid else { return }
 
-        box.workerTask = Task { @MainActor [weak self] in
-            if let self {
-                await self.syncIfNeeded(reason: .background)
+        backgroundCoordinator.startedSync = false
+        backgroundCoordinator.workerTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.backgroundCoordinator.workerTask = nil
+                self.backgroundCoordinator.startedSync = false
+                self.backgroundCoordinator.endTask()
             }
-            box.end()
+
+            if !self.tombstoneStore.snapshot().hasPendingChanges, settleDelayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: settleDelayNanoseconds)
+            }
+            guard !Task.isCancelled, self.configuration.isEnabled else { return }
+
+            let hasUnsynced = await self.hasUnsyncedLocalChangesForBackgroundFlush()
+            guard hasUnsynced else { return }
+
+            self.tombstoneStore.flushPendingToDisk()
+            self.backgroundCoordinator.startedSync = true
+            await self.syncIfNeeded(reason: .background)
         }
+    }
+
+    func hasUnsyncedLocalChangesForBackgroundFlush() async -> Bool {
+        if tombstoneStore.snapshot().hasPendingChanges {
+            return true
+        }
+        if configuration.includeSettings {
+            let currentDigest = await snapshotSource.currentSettingsDigest()
+            if currentDigest != configuration.lastSyncedSettingsDigest {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Public Status & Control API
@@ -372,19 +435,11 @@ extension SyncEngine {
         postStateChanged()
     }
 
-    func notifyConfigurationChanged() {
-        postStateChanged()
-    }
-
     @discardableResult
     func updateServerConfiguration(
         serverURL: String?,
         collectionName: String
     ) async -> SyncServerConfigUpdateResult {
-        debounceTask?.cancel()
-        debounceTask = nil
-        pendingFollowUpSync = false
-
         await acquireExclusiveLock()
         defer {
             releaseExclusiveLock()
@@ -405,6 +460,9 @@ extension SyncEngine {
         configuration.collectionName = collectionName
 
         if serverChanged {
+            debounceTask?.cancel()
+            debounceTask = nil
+            pendingFollowUpSync = false
             try? pocketBaseProvider?.signOut()
             configuration.isEnabled = false
             configuration.resetSyncProgress()
@@ -417,6 +475,9 @@ extension SyncEngine {
             )
             return SyncServerConfigUpdateResult(didResetCursor: true, didClearSession: true)
         } else if collectionChanged {
+            debounceTask?.cancel()
+            debounceTask = nil
+            pendingFollowUpSync = false
             configuration.resetSyncProgress()
             tombstoneStore.reset()
             lastErrorMessage = nil
@@ -1186,10 +1247,19 @@ private extension SyncEngine {
         }
     }
 
-    private func scheduleObservedSync() {
+    private func scheduleObservedSync() async {
         guard configuration.isEnabled else { return }
         postStateChanged()
-        scheduleDebouncedSync()
+        let inBackground = await MainActor.run { backgroundCoordinator.isInBackground }
+        if inBackground {
+            debounceTask?.cancel()
+            debounceTask = nil
+            await MainActor.run {
+                self.scheduleBackgroundFlush(settleDelayNanoseconds: 0)
+            }
+        } else {
+            scheduleDebouncedSync()
+        }
     }
 
     private func scheduleDebouncedSync() {
