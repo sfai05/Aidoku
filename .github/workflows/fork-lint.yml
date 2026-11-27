@@ -19,13 +19,15 @@ jobs:
   lint:
     name: SwiftLint (Ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     env:
-      # Keep in sync with SwiftLintPlugins in Package.resolved (0.63.3)
-      SWIFTLINT_IMAGE: "ghcr.io/realm/swiftlint:0.63.3@sha256:b70b763c949399cc3e4fdcfbc7588944d9503d498b6d96e853dfa07a944256e6"
+      # Official SwiftLint Linux image (Swift 6.3.2 + SourceKitten 0.38.0)
+      SWIFTLINT_IMAGE: "ghcr.io/realm/swiftlint:0.65.1@sha256:f47e083201e47a136cda5ae847595bfe00226c444ca226fa74fa5dc648a9b057"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Verify SwiftLint and SourceKit rules
+        timeout-minutes: 2
         run: |
           set -euo pipefail
           docker run --rm "${SWIFTLINT_IMAGE}" version
@@ -37,6 +39,7 @@ jobs:
           grep -q "(point_zero)" <<< "${OUTPUT}"
 
       - name: Run SwiftLint
+        timeout-minutes: 2
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:ro" \
