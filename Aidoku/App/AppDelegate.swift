@@ -287,6 +287,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
+        // Fork: Flush pending sync state before app termination
+        SyncEngine.shared.handleApplicationWillTerminate()
         guard let networkObserverId else { return }
         Task {
             await Reachability.shared.unregisterConnectionTypeObserver(networkObserverId)

@@ -16,6 +16,7 @@
 "SYNC_STATUS_DISABLED" = "Sync Disabled";
 
 "SYNC_SECTION_STATUS" = "Sync Status";
+"SYNC_SETUP_SUBTITLE" = "Sign in below to sync your library and reading history across devices.";
 "SYNC_ENABLE_TOGGLE" = "Enable PocketBase Sync";
 "SYNC_ENABLE_FOOTER" = "Automatically merges reading history, library, categories, and tracker links via your PocketBase server.";
 "SYNC_SERVER_LABEL" = "Server";
@@ -49,8 +50,11 @@
 "SYNC_PASSWORD_LABEL" = "Password";
 "SYNC_SIGN_IN_BUTTON" = "Sign In";
 "SYNC_SIGN_IN_SUCCESS" = "Signed in to PocketBase.";
+"SYNC_AUTH_FAILED_HINT_FORMAT" = "%@\nMake sure you sign in with a regular PocketBase 'users' account (not a Superuser admin account).";
 "SYNC_SAVE_SETTINGS_BUTTON" = "Save Server Settings";
 "SYNC_SETTINGS_SAVED" = "Server settings saved.";
+"SYNC_SERVER_CHANGED_SIGNED_OUT" = "Server URL changed. Signed out of the previous server and reset the local sync cursor.";
+"SYNC_COLLECTION_CHANGED_RESET" = "Collection changed. Local sync cursor has been reset for the new collection.";
 "SYNC_REFRESH_SESSION_BUTTON" = "Refresh Session";
 "SYNC_SESSION_REFRESHED" = "Auth session refreshed.";
 "SYNC_SIGN_OUT_BUTTON" = "Sign Out";
@@ -82,7 +86,7 @@
 "SYNC_CANCEL_BUTTON" = "Cancel";
 
 "SYNC_SECTION_OPTIONS" = "Sync Options";
-"SYNC_OPTIONS_FOOTER" = "When 'Include Safe App Settings' is enabled, sensitive keys (tokens, logins, passwords, cookies) are stripped before upload.";
+"SYNC_OPTIONS_FOOTER" = "Locking the screen or leaving the app also flushes pending changes immediately. Sensitive settings (tokens, logins, passwords, cookies) are always excluded.";
 "SYNC_DEVICE_NAME_LABEL" = "Device Name";
 "SYNC_AUTO_FOREGROUND_TOGGLE" = "Auto-Sync on Foreground";
 "SYNC_INCLUDE_SETTINGS_TOGGLE" = "Include Safe App Settings";

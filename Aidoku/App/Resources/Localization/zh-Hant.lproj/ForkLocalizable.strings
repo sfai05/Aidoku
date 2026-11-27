@@ -16,6 +16,7 @@
 "SYNC_STATUS_DISABLED" = "已停用同步";
 
 "SYNC_SECTION_STATUS" = "同步狀態";
+"SYNC_SETUP_SUBTITLE" = "請於下方登入 PocketBase 帳號，即可跨裝置同步書庫與閱讀紀錄。";
 "SYNC_ENABLE_TOGGLE" = "啟用 PocketBase 同步";
 "SYNC_ENABLE_FOOTER" = "透過你的 PocketBase 伺服器自動合併閱讀紀錄、書庫、分類與追蹤器關聯。";
 "SYNC_SERVER_LABEL" = "伺服器";
@@ -49,8 +50,11 @@
 "SYNC_PASSWORD_LABEL" = "密碼";
 "SYNC_SIGN_IN_BUTTON" = "登入";
 "SYNC_SIGN_IN_SUCCESS" = "已登入 PocketBase。";
+"SYNC_AUTH_FAILED_HINT_FORMAT" = "%@\n請確認使用的是 PocketBase「users」集合的一般帳號，而非超級管理員帳號。";
 "SYNC_SAVE_SETTINGS_BUTTON" = "儲存伺服器設定";
 "SYNC_SETTINGS_SAVED" = "已儲存伺服器設定。";
+"SYNC_SERVER_CHANGED_SIGNED_OUT" = "伺服器網址已變更，已登出舊伺服器並重設本機同步游標。";
+"SYNC_COLLECTION_CHANGED_RESET" = "集合名稱已變更，已為新集合重設本機同步游標。";
 "SYNC_REFRESH_SESSION_BUTTON" = "重新整理登入狀態";
 "SYNC_SESSION_REFRESHED" = "已更新登入驗證狀態。";
 "SYNC_SIGN_OUT_BUTTON" = "登出";
@@ -82,7 +86,7 @@
 "SYNC_CANCEL_BUTTON" = "取消";
 
 "SYNC_SECTION_OPTIONS" = "同步選項";
-"SYNC_OPTIONS_FOOTER" = "啟用「包含安全 App 設定」時，登入資訊、權杖、密碼與 Cookie 等敏感設定會在上傳前自動過濾。";
+"SYNC_OPTIONS_FOOTER" = "鎖定螢幕或切到背景時也會立即同步尚未送出的變更。登入權杖、密碼與 Cookie 等敏感設定永遠不會被上傳。";
 "SYNC_DEVICE_NAME_LABEL" = "裝置名稱";
 "SYNC_AUTO_FOREGROUND_TOGGLE" = "回到前景時自動同步";
 "SYNC_INCLUDE_SETTINGS_TOGGLE" = "包含安全 App 設定";

@@ -54,7 +54,8 @@ final class SyncSettingsViewModel: ObservableObject {
     @Published private(set) var isRunningAction = false
     @Published private(set) var isLoadingSnapshots = false
     @Published private(set) var remoteSnapshots: [SyncSnapshotMetadata] = []
-    @Published var bannerMessage: SyncBannerMessage?
+    @Published var statusBanner: SyncBannerMessage?
+    @Published var connectionBanner: SyncBannerMessage?
 
     init(
         engine: SyncEngine = .shared,
@@ -181,12 +182,22 @@ final class SyncSettingsViewModel: ObservableObject {
             }
             await refreshState()
 
-            if showBanner {
-                bannerMessage = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SETTINGS_SAVED"))
+            if updateResult.didClearSession {
+                connectionBanner = SyncBannerMessage(
+                    tone: .warning,
+                    text: ForkL10n.string("SYNC_SERVER_CHANGED_SIGNED_OUT")
+                )
+            } else if updateResult.didResetCursor {
+                connectionBanner = SyncBannerMessage(
+                    tone: .info,
+                    text: ForkL10n.string("SYNC_COLLECTION_CHANGED_RESET")
+                )
+            } else if showBanner {
+                connectionBanner = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SETTINGS_SAVED"))
             }
             return true
         } catch {
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            connectionBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
             return false
         }
     }
@@ -227,7 +238,7 @@ final class SyncSettingsViewModel: ObservableObject {
             guard hasValidServer, hasSession else {
                 isEnabled = false
                 await engine.setEnabled(false)
-                bannerMessage = SyncBannerMessage(
+                statusBanner = SyncBannerMessage(
                     tone: .error,
                     text: ForkL10n.string("SYNC_ENABLE_REQUIREMENT_ERROR")
                 )
@@ -254,7 +265,7 @@ final class SyncSettingsViewModel: ObservableObject {
             normalizedURL = resolvedURL
             validCollection = try validatedCollectionName()
         } catch {
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            connectionBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
             return
         }
 
@@ -271,12 +282,23 @@ final class SyncSettingsViewModel: ObservableObject {
             serverURLInput = engine.configuration.serverURL ?? normalizedURL
             collectionNameInput = validCollection
             emailInput = session.email
+            statusBanner = nil
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SIGN_IN_SUCCESS"))
+            connectionBanner = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SIGN_IN_SUCCESS"))
             await runHealthCheck()
+        } catch let syncError as SyncError {
+            await refreshState()
+            if case .authenticationFailed = syncError {
+                connectionBanner = SyncBannerMessage(
+                    tone: .error,
+                    text: ForkL10n.format("SYNC_AUTH_FAILED_HINT_FORMAT", syncError.localizedDescription)
+                )
+            } else {
+                connectionBanner = SyncBannerMessage(tone: .error, text: syncError.localizedDescription)
+            }
         } catch {
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            connectionBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -288,7 +310,8 @@ final class SyncSettingsViewModel: ObservableObject {
         await engine.signOut()
         healthStatus = nil
         remoteSnapshots = []
-        bannerMessage = nil
+        statusBanner = nil
+        connectionBanner = nil
         await refreshState()
     }
 
@@ -301,10 +324,10 @@ final class SyncSettingsViewModel: ObservableObject {
             let session = try await provider.refreshAuth()
             emailInput = session.email
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SESSION_REFRESHED"))
+            connectionBanner = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SESSION_REFRESHED"))
         } catch {
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            connectionBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -315,13 +338,13 @@ final class SyncSettingsViewModel: ObservableObject {
         do {
             let result = try await engine.syncNow()
             await refreshState()
-            bannerMessage = SyncBannerMessage(
+            statusBanner = SyncBannerMessage(
                 tone: .success,
                 text: formattedSyncResult(result)
             )
         } catch {
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -359,9 +382,17 @@ final class SyncSettingsViewModel: ObservableObject {
             healthStatus = nil
             remoteSnapshots = []
             passwordInput = ""
+            connectionBanner = SyncBannerMessage(
+                tone: .warning,
+                text: ForkL10n.string("SYNC_SERVER_CHANGED_SIGNED_OUT")
+            )
         } else if updateResult.didResetCursor {
             healthStatus = nil
             remoteSnapshots = []
+            connectionBanner = SyncBannerMessage(
+                tone: .info,
+                text: ForkL10n.string("SYNC_COLLECTION_CHANGED_RESET")
+            )
         }
 
         let result = try await provider.provisionCollection(
@@ -397,7 +428,7 @@ extension SyncSettingsViewModel {
         do {
             remoteSnapshots = try await engine.listRemoteSnapshots(limit: 25)
         } catch {
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -408,10 +439,10 @@ extension SyncSettingsViewModel {
         do {
             let result = try await engine.forcePush()
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .success, text: formattedSyncResult(result))
+            statusBanner = SyncBannerMessage(tone: .success, text: formattedSyncResult(result))
         } catch {
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -422,10 +453,10 @@ extension SyncSettingsViewModel {
         do {
             let result = try await engine.forcePull(recordId: snapshot?.id, publishAsNewRevision: true)
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .success, text: formattedSyncResult(result))
+            statusBanner = SyncBannerMessage(tone: .success, text: formattedSyncResult(result))
         } catch {
             await refreshState()
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -435,13 +466,13 @@ extension SyncSettingsViewModel {
 
         do {
             let deletedCount = try await engine.cleanupRemoteSnapshots(keepLatest: engine.configuration.maxRemoteSnapshots)
-            bannerMessage = SyncBannerMessage(
+            statusBanner = SyncBannerMessage(
                 tone: .info,
                 text: ForkL10n.format("SYNC_CLEANUP_RESULT_FORMAT", deletedCount)
             )
             await loadRemoteSnapshots()
         } catch {
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -452,12 +483,12 @@ extension SyncSettingsViewModel {
         do {
             try await engine.deleteRemoteSnapshot(id: snapshot.id)
             remoteSnapshots.removeAll { $0.id == snapshot.id }
-            bannerMessage = SyncBannerMessage(
+            statusBanner = SyncBannerMessage(
                 tone: .info,
                 text: ForkL10n.format("SYNC_DELETE_SNAPSHOT_SUCCESS_FORMAT", snapshot.revision)
             )
         } catch {
-            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
+            statusBanner = SyncBannerMessage(tone: .error, text: error.localizedDescription)
         }
     }
 
@@ -470,9 +501,10 @@ extension SyncSettingsViewModel {
             healthStatus = nil
             remoteSnapshots = []
             passwordInput = ""
+            connectionBanner = nil
         }
         await refreshState()
-        bannerMessage = SyncBannerMessage(
+        statusBanner = SyncBannerMessage(
             tone: .info,
             text: ForkL10n.string(clearCredentials ? "SYNC_RESET_ALL_DONE" : "SYNC_RESET_CURSOR_DONE")
         )

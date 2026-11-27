@@ -288,7 +288,7 @@ final class SyncTombstoneStore: @unchecked Sendable {
     }
 
     func recordMangaDetailsUpdate(mangaId: MangaIdentifier, at date: Date? = nil) {
-        mutateIfActive(at: date) { state, timestamp in
+        mutateIfActive(at: date, coalesceWithin: 2) { state, timestamp in
             Self.upsertMaxDate(
                 &state.tombstones.mangaDetailsUpdates,
                 entry: SyncMangaCategoryUpdate(mangaId: mangaId, updatedAt: timestamp),
@@ -365,17 +365,33 @@ final class SyncTombstoneStore: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    private func mutateIfActive(at date: Date? = nil, _ mutation: (inout PersistedState, Date) -> Void) {
+    private func mutateIfActive(
+        at date: Date? = nil,
+        coalesceWithin: TimeInterval? = nil,
+        _ mutation: (inout PersistedState, Date) -> Void
+    ) {
         guard recordingEnabledProvider() else { return }
         lock.lock()
         defer { lock.unlock() }
         guard suspensionDepth == 0 else { return }
         var state = loadStateLocked()
+        let wasPending = state.hasPendingLocalChanges
         let timestamp = date ?? nowProvider()
         mutation(&state, timestamp)
         state.lastMutationAt = max(state.lastMutationAt ?? .distantPast, timestamp)
         mutationEpoch &+= 1
-        saveStateLocked(state)
+
+        if
+            let coalesceWithin,
+            wasPending,
+            let lastSave = lastDiskSaveAt,
+            nowProvider().timeIntervalSince(lastSave) < coalesceWithin
+        {
+            loadedState = state
+            dirtyInMemory = true
+        } else {
+            saveStateLocked(state)
+        }
     }
 
     private func loadStateLocked() -> PersistedState {

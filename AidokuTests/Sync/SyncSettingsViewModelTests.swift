@@ -193,7 +193,7 @@ struct SyncSettingsViewModelTests {
 
         await harness.viewModel.setEnabled(true)
         #expect(!harness.viewModel.isEnabled)
-        #expect(harness.viewModel.bannerMessage?.tone == .error)
+        #expect(harness.viewModel.statusBanner?.tone == .error)
 
         // Force enabled flag with missing session to verify error indicator safeguard.
         harness.config.isEnabled = true
@@ -481,14 +481,14 @@ struct SyncSettingsViewModelTests {
         let targetSnapshot = harness.viewModel.remoteSnapshots[2]
         await harness.viewModel.forcePull(snapshot: targetSnapshot)
         #expect(harness.config.lastSyncedRevision == 4)
-        #expect(harness.viewModel.bannerMessage?.tone == .success)
+        #expect(harness.viewModel.statusBanner?.tone == .success)
 
         let deletedTarget = harness.viewModel.remoteSnapshots[1]
         await harness.viewModel.deleteRemoteSnapshot(deletedTarget)
         #expect(!harness.viewModel.remoteSnapshots.contains { $0.id == deletedTarget.id })
 
         await harness.viewModel.cleanupRemoteSnapshots()
-        #expect(harness.viewModel.bannerMessage?.tone == .info)
+        #expect(harness.viewModel.statusBanner?.tone == .info)
 
         await harness.viewModel.resetLocalSyncState(clearCredentials: false)
         #expect(harness.config.lastSyncedRevision == 0)
@@ -548,7 +548,7 @@ struct SyncSettingsViewModelTests {
         await harness.viewModel.forcePush()
         #expect(harness.config.lastSyncedRevision == 1)
         #expect(harness.viewModel.status.stats.libraryCount == 1)
-        #expect(harness.viewModel.bannerMessage?.tone == .success)
+        #expect(harness.viewModel.statusBanner?.tone == .success)
     }
 }
 
@@ -669,6 +669,7 @@ extension SyncSettingsViewModelTests {
         #expect(harness.config.lastSyncedRevision == 0)
         #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
         #expect(harness.viewModel.isSignedIn)
+        #expect(harness.viewModel.connectionBanner?.tone == .info)
 
         // Changing server URL while signed in clears Keychain session, disables sync, and resets cursor.
         harness.config.lastSyncedRevision = 6
@@ -683,11 +684,167 @@ extension SyncSettingsViewModelTests {
         #expect(!harness.viewModel.isEnabled)
         #expect(harness.config.lastSyncedRevision == 0)
         #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(harness.viewModel.healthStatus == nil)
+        #expect(harness.viewModel.remoteSnapshots.isEmpty)
+        #expect(harness.viewModel.connectionBanner?.tone == .warning)
         #expect(try harness.keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken) == nil)
 
         // Device name whitespace trimming on live edit.
         harness.viewModel.deviceNameInput = "  iPad Pro  "
         harness.viewModel.persistDeviceNameInput()
         #expect(harness.config.deviceName == "iPad Pro")
+    }
+
+    @Test func authFailureSurfacesUsersHintAndCollectionOrProvisioningSwitchesResetCursor() async throws {
+        let handlers: [ViewModelMockHTTPClient.Handler] = [
+            // 1. Failed login
+            { _ in (400, Data(#"{"status":400,"message":"Failed to authenticate."}"#.utf8)) },
+            // 2. Successful sign in on collection_a
+            { _ in (200, Data(#"{"token":"jwt-col-a","record":{"id":"u1","email":"u1@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-col-a-r","record":{"id":"u1","email":"u1@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) },
+            // 3. Re-sign-in on collection_b
+            { _ in (200, Data(#"{"token":"jwt-col-b","record":{"id":"u1","email":"u1@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-col-b-r","record":{"id":"u1","email":"u1@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) },
+            // 4. provisionCollection after switching serverURLInput -> clears old session cleanly
+            { _ in (200, Data(#"{"token":"su-jwt","record":{"id":"su_1"}}"#.utf8)) },
+            { _ in (404, Data(#"{"status":404}"#.utf8)) },
+            { _ in (200, Data(#"{"id":"users_col"}"#.utf8)) },
+            { _ in (200, Data(#"{"id":"col_new"}"#.utf8)) }
+        ]
+        let harness = Harness(handlers: handlers, signedIn: false, enabled: false, serverURL: nil)
+        defer { harness.tearDown() }
+
+        harness.viewModel.serverURLInput = "https://pb1.example.com"
+        harness.viewModel.collectionNameInput = "collection_a"
+        harness.viewModel.emailInput = "u1@example.com"
+        harness.viewModel.passwordInput = "wrong"
+        await harness.viewModel.signIn()
+        #expect(harness.viewModel.connectionBanner?.tone == .error)
+        #expect(harness.viewModel.connectionBanner?.text.contains("users") == true)
+        #expect(harness.viewModel.statusBanner == nil)
+
+        harness.viewModel.passwordInput = "correct"
+        await harness.viewModel.signIn()
+        #expect(harness.viewModel.connectionBanner?.tone == .success)
+        #expect(harness.viewModel.healthStatus?.isHealthy == true)
+
+        harness.config.isEnabled = true
+        harness.config.lastSyncedRevision = 9
+        harness.tombstoneStore.recordLibraryDeletion(
+            mangaId: MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-ca"),
+            at: SyncTestFixtures.date(4_900)
+        )
+
+        await harness.viewModel.signOut()
+        harness.viewModel.collectionNameInput = "collection_b"
+        harness.viewModel.passwordInput = "correct"
+        await harness.viewModel.signIn()
+        #expect(harness.config.collectionName == "collection_b")
+        #expect(harness.config.lastSyncedRevision == 0)
+        #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(!harness.tombstoneStore.snapshot().hasPendingChanges)
+
+        // Switching server URL before running provisionCollection clears session & updates connectionBanner.
+        harness.viewModel.serverURLInput = "https://pb2.example.com"
+        let prov = try await harness.viewModel.provisionCollection(
+            superuserEmail: "admin@example.com",
+            superuserPassword: "su-pw"
+        )
+        #expect(prov == .created(collectionName: "collection_b"))
+        #expect(!harness.viewModel.isSignedIn)
+        #expect(harness.viewModel.healthStatus == nil)
+        #expect(harness.viewModel.connectionBanner?.tone == .warning)
+    }
+
+    @Test func backgroundFlushCheckDetectsSettingsAndCoalescesMangaDetailsUpdates() async {
+        let timeBox = SyncTestValueBox<TimeInterval>(5_000)
+        let suiteName = "ForkSyncBgTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer {
+            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+            tempDir.removeItem()
+        }
+
+        let config = SyncConfiguration(userDefaults: defaults)
+        config.isEnabled = true
+        let tombstoneURL = tempDir.appendingPathComponent("tombstones.json")
+        let tombstoneStore = SyncTombstoneStore(
+            fileURL: tombstoneURL,
+            nowProvider: { Date(timeIntervalSince1970: timeBox.get()) },
+            recordingEnabledProvider: { config.isEnabled }
+        )
+        let backupWithSettings = SyncTestFixtures.makeBackup(
+            settings: ["Reader.page": .int(1)]
+        )
+        let snapshotSource = ViewModelMockSnapshotSource(backup: backupWithSettings)
+        let engine = SyncEngine(
+            configuration: config,
+            keychain: InMemoryKeychainStore(),
+            provider: nil,
+            tombstoneStore: tombstoneStore,
+            logStore: SyncLogStore(fileURL: tempDir.appendingPathComponent("logs.json")),
+            snapshotSource: snapshotSource,
+            snapshotApplier: ViewModelMockSnapshotApplier(source: snapshotSource)
+        )
+
+        let initiallyDirty = await engine.hasUnsyncedLocalChangesForBackgroundFlush()
+        #expect(!initiallyDirty)
+
+        config.includeSettings = true
+        config.lastSyncedSettingsDigest = "stale-digest"
+        let dirtyAfterSettings = await engine.hasUnsyncedLocalChangesForBackgroundFlush()
+        #expect(dirtyAfterSettings)
+
+        config.includeSettings = false
+        let dirtyWithoutSettings = await engine.hasUnsyncedLocalChangesForBackgroundFlush()
+        #expect(!dirtyWithoutSettings)
+
+        // Coalescing verification for recordMangaDetailsUpdate within 2s window.
+        let m1 = MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-1")
+        let m2 = MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-2")
+        tombstoneStore.recordMangaDetailsUpdate(mangaId: m1, at: Date(timeIntervalSince1970: 5_000))
+        let diskAfterFirst = try? Data(contentsOf: tombstoneURL)
+        #expect(diskAfterFirst != nil)
+
+        timeBox.set(5_000.5)
+        tombstoneStore.recordMangaDetailsUpdate(mangaId: m2, at: Date(timeIntervalSince1970: 5_001))
+        let diskWhileCoalesced = try? Data(contentsOf: tombstoneURL)
+        #expect(diskWhileCoalesced == diskAfterFirst)
+        #expect(tombstoneStore.snapshot().tombstones.mangaDetailsUpdates.count == 2)
+
+        tombstoneStore.flushPendingToDisk()
+        let diskAfterFlush = try? Data(contentsOf: tombstoneURL)
+        #expect(diskAfterFlush != nil)
+        #expect(diskAfterFlush != diskAfterFirst)
+        #expect(await engine.hasUnsyncedLocalChangesForBackgroundFlush())
+    }
+
+    @Test func defaultDebounceIsSixtySecondsAndPickerOptionsStayWithinBounds() {
+        let suiteName = "ForkSyncDebounceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let config = SyncConfiguration(userDefaults: defaults)
+        #expect(config.autoSyncDebounceSeconds == 60)
+
+        let options: [TimeInterval] = [5, 15, 30, 60, 120]
+        for option in options {
+            config.autoSyncDebounceSeconds = option
+            #expect(config.autoSyncDebounceSeconds == option)
+        }
+
+        config.autoSyncDebounceSeconds = 1
+        #expect(config.autoSyncDebounceSeconds == 2)
+
+        config.autoSyncDebounceSeconds = 600
+        #expect(config.autoSyncDebounceSeconds == 300)
+
+        defaults.set(TimeInterval(0), forKey: "ForkSync.autoSyncDebounceSeconds")
+        #expect(config.autoSyncDebounceSeconds == 60)
     }
 }

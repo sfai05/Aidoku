@@ -54,7 +54,7 @@ struct SyncRecoveryView: View {
                     text: ForkL10n.string("SYNC_RECOVERY_WARNING")
                 ))
 
-                if let banner = viewModel.bannerMessage {
+                if let banner = viewModel.statusBanner {
                     SyncBannerView(banner: banner)
                 }
             }
@@ -210,12 +210,8 @@ struct SyncRecoveryView: View {
     }
 
     private func isLatestSnapshot(_ snapshot: SyncSnapshotMetadata) -> Bool {
-        guard let headRevision = viewModel.remoteSnapshots.map(\.revision).max() else {
-            return false
-        }
-        return snapshot.revision == headRevision && snapshot.id == viewModel.remoteSnapshots.first(
-            where: { $0.revision == headRevision }
-        )?.id
+        let head = viewModel.remoteSnapshots.max { ($0.revision, $0.createdAt) < ($1.revision, $1.createdAt) }
+        return snapshot.id == head?.id
     }
 
     private func displayDeviceName(_ snapshot: SyncSnapshotMetadata) -> String {
