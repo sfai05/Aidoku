@@ -19,25 +19,116 @@ enum SyncObservedEvent: Sendable {
 }
 
 @MainActor
+protocol SyncBackgroundTaskManaging: AnyObject, Sendable {
+    var hasActiveForegroundScene: Bool { get }
+    func beginBackgroundTask(
+        withName taskName: String?,
+        expirationHandler handler: (@MainActor @Sendable () -> Void)?
+    ) -> UIBackgroundTaskIdentifier
+    func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier)
+}
+
+@MainActor
+final class UIApplicationBackgroundTaskManager: SyncBackgroundTaskManaging {
+    static let shared = UIApplicationBackgroundTaskManager()
+
+    var hasActiveForegroundScene: Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .contains { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
+    }
+
+    func beginBackgroundTask(
+        withName taskName: String?,
+        expirationHandler handler: (@MainActor @Sendable () -> Void)?
+    ) -> UIBackgroundTaskIdentifier {
+        UIApplication.shared.beginBackgroundTask(withName: taskName) {
+            MainActor.assumeIsolated {
+                handler?()
+            }
+        }
+    }
+
+    func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {
+        UIApplication.shared.endBackgroundTask(identifier)
+    }
+}
+
+@MainActor
 private final class BackgroundFlushCoordinator {
+    private let taskManagerOverride: (any SyncBackgroundTaskManaging)?
+
     var isInBackground = false
     var identifier: UIBackgroundTaskIdentifier = .invalid
     var workerTask: Task<Void, Never>?
-    var startedSync = false
+    var workerGeneration: UInt64 = 0
+    var assertionGeneration: UInt64 = 0
+    var needsRescan = false
+    var rescanDelayNanoseconds: UInt64 = 0
 
-    nonisolated init() {}
+    nonisolated init(taskManager: (any SyncBackgroundTaskManaging)? = nil) {
+        self.taskManagerOverride = taskManager
+    }
+
+    var hasActiveForegroundScene: Bool {
+        resolvedTaskManager.hasActiveForegroundScene
+    }
+
+    private var resolvedTaskManager: any SyncBackgroundTaskManaging {
+        taskManagerOverride ?? UIApplicationBackgroundTaskManager.shared
+    }
+
+    @discardableResult
+    func beginTaskIfNeeded(
+        name: String = "ForkSyncBackgroundFlush",
+        onExpire: @escaping @MainActor @Sendable (UInt64) -> Void
+    ) -> Bool {
+        if identifier != .invalid {
+            return true
+        }
+        assertionGeneration &+= 1
+        let expectedAssertionGeneration = assertionGeneration
+        // Capture coordinator strongly so endBackgroundTask still runs if the owning engine has been released.
+        let coordinator = self
+        let createdId = resolvedTaskManager.beginBackgroundTask(withName: name) {
+            guard
+                coordinator.assertionGeneration == expectedAssertionGeneration,
+                coordinator.identifier != .invalid
+            else {
+                return
+            }
+            let expiredGeneration = coordinator.cancelAndEnd()
+            onExpire(expiredGeneration)
+        }
+        identifier = createdId
+        return createdId != .invalid
+    }
 
     func endTask() {
+        assertionGeneration &+= 1
         let currentId = identifier
         identifier = .invalid
         guard currentId != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(currentId)
+        resolvedTaskManager.endBackgroundTask(currentId)
     }
 
-    func cancelAndEnd() {
+    @discardableResult
+    func cancelAndEnd() -> UInt64 {
+        let expiredGeneration = workerGeneration
+        workerGeneration &+= 1
         workerTask?.cancel()
         workerTask = nil
-        startedSync = false
+        needsRescan = false
+        rescanDelayNanoseconds = 0
+        endTask()
+        return expiredGeneration
+    }
+
+    func finishWorkerIfCurrent(generation: UInt64) {
+        guard workerGeneration == generation else { return }
+        workerTask = nil
+        needsRescan = false
+        rescanDelayNanoseconds = 0
         endTask()
     }
 }
@@ -180,17 +271,21 @@ actor SyncEngine {
     private let snapshotApplier: SyncSnapshotApplier
     private let nowProvider: @Sendable () -> Date
     private let observerBridge = SyncObserverBridge()
-    private let backgroundCoordinator = BackgroundFlushCoordinator()
+    private let backgroundCoordinator: BackgroundFlushCoordinator
+    private let backgroundSettleDelayNanoseconds: UInt64
 
     private var isOperationActive = false
     private var pendingOperationWaiters: [CheckedContinuation<Void, Never>] = []
     private var activeCoalescedSyncTask: Task<SyncResult, Error>?
     private var currentRunningTask: Task<SyncResult, Error>?
     private var isSyncing = false
+    private var isCancellingActiveTask = false
     private var pendingFollowUpSync = false
     private var lastErrorMessage: String?
     private var lastForegroundSyncAt: Date = .distantPast
     private var debounceTask: Task<Void, Never>?
+    private var minActiveBackgroundGeneration: UInt64 = 0
+    private var currentRunningBackgroundGeneration: UInt64?
 
     let foregroundCooldownSeconds: TimeInterval
 
@@ -203,6 +298,8 @@ actor SyncEngine {
         snapshotSource: SyncSnapshotSource = BackupManagerSnapshotSource(),
         snapshotApplier: SyncSnapshotApplier? = nil,
         foregroundCooldownSeconds: TimeInterval = SyncEngine.foregroundCooldownSeconds,
+        backgroundTaskManager: (any SyncBackgroundTaskManaging)? = nil,
+        backgroundSettleDelayNanoseconds: UInt64 = 350_000_000,
         nowProvider: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.configuration = configuration
@@ -218,6 +315,8 @@ actor SyncEngine {
         self.snapshotSource = snapshotSource
         self.snapshotApplier = snapshotApplier ?? SyncCoreDataApplier(tombstoneStore: tombstoneStore)
         self.foregroundCooldownSeconds = foregroundCooldownSeconds
+        self.backgroundCoordinator = BackgroundFlushCoordinator(taskManager: backgroundTaskManager)
+        self.backgroundSettleDelayNanoseconds = backgroundSettleDelayNanoseconds
         self.nowProvider = nowProvider
     }
 
@@ -261,60 +360,103 @@ actor SyncEngine {
     }
 
     @MainActor func handleSceneDidEnterBackground() {
-        backgroundCoordinator.isInBackground = true
         tombstoneStore.flushPendingToDisk()
+        guard !backgroundCoordinator.hasActiveForegroundScene else {
+            backgroundCoordinator.isInBackground = false
+            return
+        }
+        backgroundCoordinator.isInBackground = true
         guard configuration.isEnabled else { return }
-        scheduleBackgroundFlush(settleDelayNanoseconds: 350_000_000)
+        scheduleBackgroundFlush(settleDelayNanoseconds: backgroundSettleDelayNanoseconds)
     }
 
     @MainActor func handleApplicationWillTerminate() {
         tombstoneStore.flushPendingToDisk()
-        guard configuration.isEnabled, tombstoneStore.snapshot().hasPendingChanges else { return }
+        guard
+            configuration.isEnabled,
+            tombstoneStore.snapshot().hasPendingChanges || configuration.includeSettings
+        else {
+            return
+        }
         scheduleBackgroundFlush(settleDelayNanoseconds: 0)
+    }
+
+    @MainActor
+    @discardableResult
+    private func beginBackgroundTaskAssertionIfNeeded() -> Bool {
+        backgroundCoordinator.beginTaskIfNeeded { [weak self] expiredGeneration in
+            Task {
+                await self?.cancelActiveSync(expiredThroughGeneration: expiredGeneration)
+            }
+        }
     }
 
     @MainActor
     private func scheduleBackgroundFlush(settleDelayNanoseconds: UInt64) {
         if backgroundCoordinator.workerTask != nil {
-            if settleDelayNanoseconds == 0 && backgroundCoordinator.startedSync {
-                Task { [weak self] in
-                    await self?.syncIfNeeded(reason: .background)
-                }
-            }
+            _ = beginBackgroundTaskAssertionIfNeeded()
+            backgroundCoordinator.needsRescan = true
+            backgroundCoordinator.rescanDelayNanoseconds = max(
+                backgroundCoordinator.rescanDelayNanoseconds,
+                settleDelayNanoseconds
+            )
             return
         }
 
-        let createdId = UIApplication.shared.beginBackgroundTask(withName: "ForkSyncBackgroundFlush") { [weak self] in
-            MainActor.assumeIsolated {
-                self?.backgroundCoordinator.cancelAndEnd()
-            }
-            Task {
-                await self?.cancelActiveSync()
-            }
-        }
-        backgroundCoordinator.identifier = createdId
-        guard createdId != .invalid else { return }
+        guard beginBackgroundTaskAssertionIfNeeded() else { return }
 
-        backgroundCoordinator.startedSync = false
+        backgroundCoordinator.workerGeneration &+= 1
+        let generation = backgroundCoordinator.workerGeneration
+        backgroundCoordinator.needsRescan = false
+        backgroundCoordinator.rescanDelayNanoseconds = 0
+
         backgroundCoordinator.workerTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                self.backgroundCoordinator.workerTask = nil
-                self.backgroundCoordinator.startedSync = false
-                self.backgroundCoordinator.endTask()
+                self.backgroundCoordinator.finishWorkerIfCurrent(generation: generation)
             }
 
-            if !self.tombstoneStore.snapshot().hasPendingChanges, settleDelayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: settleDelayNanoseconds)
+            let maxPasses = 3
+            var passes = 0
+            var currentDelay = settleDelayNanoseconds
+
+            while passes < maxPasses, !Task.isCancelled, self.configuration.isEnabled {
+                passes += 1
+                if !self.tombstoneStore.snapshot().hasPendingChanges, currentDelay > 0 {
+                    try? await Task.sleep(nanoseconds: currentDelay)
+                }
+                guard !Task.isCancelled, self.configuration.isEnabled else { return }
+
+                self.backgroundCoordinator.needsRescan = false
+                self.backgroundCoordinator.rescanDelayNanoseconds = 0
+
+                let hasUnsynced = await self.hasUnsyncedLocalChangesForBackgroundFlush()
+                guard !Task.isCancelled, self.configuration.isEnabled else { return }
+
+                if hasUnsynced {
+                    self.tombstoneStore.flushPendingToDisk()
+                    await self.cancelPendingDebounce()
+                    await self.syncForBackgroundFlush(generation: generation)
+                }
+
+                guard !Task.isCancelled, self.backgroundCoordinator.needsRescan else { break }
+                currentDelay = self.backgroundCoordinator.rescanDelayNanoseconds
+                self.backgroundCoordinator.rescanDelayNanoseconds = 0
             }
-            guard !Task.isCancelled, self.configuration.isEnabled else { return }
+        }
+    }
 
-            let hasUnsynced = await self.hasUnsyncedLocalChangesForBackgroundFlush()
-            guard hasUnsynced else { return }
+    private func cancelPendingDebounce() {
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
 
-            self.tombstoneStore.flushPendingToDisk()
-            self.backgroundCoordinator.startedSync = true
-            await self.syncIfNeeded(reason: .background)
+    private func syncForBackgroundFlush(generation: UInt64) async {
+        guard configuration.isEnabled, generation >= minActiveBackgroundGeneration else { return }
+        do {
+            _ = try await runSerializedOperation(.regular(.background), backgroundGeneration: generation)
+        } catch {
+            // Errors are persisted on status & SyncLogStore for dashboard inspection.
         }
     }
 
@@ -861,11 +1003,20 @@ private extension SyncEngine {
 // MARK: - Exclusive Sync Runner
 
 private extension SyncEngine {
-    func cancelActiveSync() {
-        debounceTask?.cancel()
-        debounceTask = nil
+    func cancelActiveSync(expiredThroughGeneration: UInt64? = nil) {
+        if let expiredThroughGeneration {
+            minActiveBackgroundGeneration = max(minActiveBackgroundGeneration, expiredThroughGeneration &+ 1)
+            if let activeBackgroundGeneration = currentRunningBackgroundGeneration,
+               activeBackgroundGeneration > expiredThroughGeneration {
+                return
+            }
+        }
+        cancelPendingDebounce()
         pendingFollowUpSync = false
-        currentRunningTask?.cancel()
+        if currentRunningTask != nil {
+            isCancellingActiveTask = true
+            currentRunningTask?.cancel()
+        }
     }
 
     func acquireExclusiveLock() async {
@@ -897,26 +1048,40 @@ private extension SyncEngine {
         }
     }
 
-    func runSerializedOperation(_ kind: SerializedOperationKind) async throws -> SyncResult {
-        if !kind.isForceOperation, let coalesced = activeCoalescedSyncTask, pendingOperationWaiters.isEmpty {
+    func runSerializedOperation(
+        _ kind: SerializedOperationKind,
+        backgroundGeneration: UInt64? = nil
+    ) async throws -> SyncResult {
+        let canCoalesce = !kind.isForceOperation
+            && !isCancellingActiveTask
+            && !(currentRunningTask?.isCancelled ?? false)
+            && (backgroundGeneration == nil || backgroundGeneration == currentRunningBackgroundGeneration)
+        if canCoalesce, let coalesced = activeCoalescedSyncTask, pendingOperationWaiters.isEmpty {
             pendingFollowUpSync = true
             return try await coalesced.value
         }
 
         if kind.isForceOperation {
-            debounceTask?.cancel()
-            debounceTask = nil
+            cancelPendingDebounce()
             pendingFollowUpSync = false
         }
 
         await acquireExclusiveLock()
+        if let backgroundGeneration, backgroundGeneration < minActiveBackgroundGeneration {
+            releaseExclusiveLock()
+            throw CancellationError()
+        }
         isSyncing = true
+        isCancellingActiveTask = false
+        currentRunningBackgroundGeneration = backgroundGeneration
         lastErrorMessage = nil
         postStateChanged()
 
         defer {
             currentRunningTask = nil
             activeCoalescedSyncTask = nil
+            currentRunningBackgroundGeneration = nil
+            isCancellingActiveTask = false
             releaseExclusiveLock()
             if !isOperationActive {
                 isSyncing = false
@@ -1250,10 +1415,11 @@ private extension SyncEngine {
     private func scheduleObservedSync() async {
         guard configuration.isEnabled else { return }
         postStateChanged()
-        let inBackground = await MainActor.run { backgroundCoordinator.isInBackground }
+        let inBackground = await MainActor.run {
+            backgroundCoordinator.isInBackground && !backgroundCoordinator.hasActiveForegroundScene
+        }
         if inBackground {
-            debounceTask?.cancel()
-            debounceTask = nil
+            cancelPendingDebounce()
             await MainActor.run {
                 self.scheduleBackgroundFlush(settleDelayNanoseconds: 0)
             }

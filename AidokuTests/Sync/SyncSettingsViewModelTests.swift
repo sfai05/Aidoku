@@ -194,7 +194,6 @@ struct SyncSettingsViewModelTests {
         await harness.viewModel.setEnabled(true)
         #expect(!harness.viewModel.isEnabled)
         #expect(harness.viewModel.statusBanner?.tone == .error)
-        #expect(harness.config.autoSyncDebounceSeconds == 60)
 
         // Force enabled flag with missing session to verify error indicator safeguard.
         harness.config.isEnabled = true
@@ -823,5 +822,29 @@ extension SyncSettingsViewModelTests {
         #expect(diskAfterFlush != nil)
         #expect(diskAfterFlush != diskAfterFirst)
         #expect(await engine.hasUnsyncedLocalChangesForBackgroundFlush())
+    }
+
+    @Test func defaultDebounceIsSixtySecondsAndPickerOptionsStayWithinBounds() {
+        let suiteName = "ForkSyncDebounceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let config = SyncConfiguration(userDefaults: defaults)
+        #expect(config.autoSyncDebounceSeconds == 60)
+
+        let options: [TimeInterval] = [5, 15, 30, 60, 120]
+        for option in options {
+            config.autoSyncDebounceSeconds = option
+            #expect(config.autoSyncDebounceSeconds == option)
+        }
+
+        config.autoSyncDebounceSeconds = 1
+        #expect(config.autoSyncDebounceSeconds == 2)
+
+        config.autoSyncDebounceSeconds = 600
+        #expect(config.autoSyncDebounceSeconds == 300)
+
+        defaults.set(TimeInterval(0), forKey: "ForkSync.autoSyncDebounceSeconds")
+        #expect(config.autoSyncDebounceSeconds == 60)
     }
 }
