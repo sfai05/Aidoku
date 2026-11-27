@@ -463,16 +463,22 @@ private struct MockTrackerMetadataProvider: TrackerMetadataProvider {
         )
         #expect(viewModel.contentRating == .safe)
         #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
+        #expect(!viewModel.hasAnyLockedOrModifiedFields)
 
         viewModel.onContentRatingChanged(.suggestive)
         #expect(viewModel.contentRating == .suggestive)
         #expect(viewModel.isFieldEdited(.contentRating))
         #expect(viewModel.hasPendingChanges)
+        #expect(viewModel.canSave)
+        #expect(viewModel.hasAnyLockedOrModifiedFields)
 
         viewModel.onContentRatingChanged(.safe)
         #expect(viewModel.contentRating == .safe)
         #expect(!viewModel.isFieldEdited(.contentRating))
         #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
+        #expect(!viewModel.hasAnyLockedOrModifiedFields)
 
         viewModel.applyPulledSelection(
             TrackerMetadataSelection(
@@ -483,11 +489,13 @@ private struct MockTrackerMetadataProvider: TrackerMetadataProvider {
         )
         #expect(viewModel.contentRating == .nsfw)
         #expect(viewModel.isFieldEdited(.contentRating))
+        #expect(viewModel.canSave)
 
         viewModel.resetField(.contentRating)
         #expect(viewModel.contentRating == .safe)
         #expect(!viewModel.isFieldEdited(.contentRating))
         #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
     }
 
     @Test func pullSheetContentRatingDiffIgnoresMissingOrUnknownAndDetectsChanges() {
@@ -545,19 +553,26 @@ private struct MockTrackerMetadataProvider: TrackerMetadataProvider {
                 tags: []
             )
         ))
+        let nsfwCandidates = MangaBakaMetadataPullSheet.PullFieldCandidates(
+            title: "Title",
+            coverUrl: nil,
+            authors: [],
+            artists: [],
+            status: .ongoing,
+            contentRating: .nsfw,
+            description: nil,
+            tags: []
+        )
         #expect(MangaBakaMetadataPullSheet.fieldDiffers(
             .contentRating,
             currentDraft: safeDraft,
-            candidates: .init(
-                title: "Title",
-                coverUrl: nil,
-                authors: [],
-                artists: [],
-                status: .ongoing,
-                contentRating: .nsfw,
-                description: nil,
-                tags: []
-            )
+            candidates: nsfwCandidates
         ))
+        #expect(
+            MangaBakaMetadataPullSheet.defaultSelectedFields(
+                currentDraft: safeDraft,
+                candidates: nsfwCandidates
+            ) == [.contentRating]
+        )
     }
 }

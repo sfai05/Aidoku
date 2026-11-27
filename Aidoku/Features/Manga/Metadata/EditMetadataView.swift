@@ -13,6 +13,7 @@ struct EditMetadataView: View {
     @StateObject private var viewModel: EditMetadataViewModel
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showingCoverUrlField = false
     @State private var showingImagePicker = false
@@ -383,7 +384,7 @@ private extension EditMetadataView {
                     title: ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
                     field: .contentRating
                 )
-                Picker(
+                let ratingPicker = Picker(
                     ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
                     selection: Binding(
                         get: { viewModel.contentRating },
@@ -394,7 +395,14 @@ private extension EditMetadataView {
                         Text(rating.title).tag(rating)
                     }
                 }
-                .pickerStyle(.segmented)
+                if dynamicTypeSize.isAccessibilitySize {
+                    ratingPicker
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                } else {
+                    ratingPicker
+                        .pickerStyle(.segmented)
+                }
             }
             .padding(.vertical, 2)
         }
