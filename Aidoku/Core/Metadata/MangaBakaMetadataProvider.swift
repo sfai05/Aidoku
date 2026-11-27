@@ -5,6 +5,7 @@
 //  Created by Kodoku on 11/27/26.
 //
 
+import AidokuRunner
 import Foundation
 
 /// Fetches and normalizes series metadata from a linked MangaBaka entry.
@@ -125,10 +126,29 @@ struct MangaBakaMetadataProvider: TrackerMetadataProvider {
             artists: artists,
             nativeArtists: nativeArtists,
             status: series.status.toRunnerStatus(),
+            contentRating: mapContentRating(series.contentRating),
             description: description,
             descriptionOptions: descriptionOptions,
             tags: tags
         )
+    }
+
+    /// Maps MangaBaka API `content_rating` strings (`safe`, `suggestive`, `erotica`, `pornographic`) to runner ratings.
+    static func mapContentRating(_ raw: String?) -> AidokuRunner.ContentRating? {
+        guard let normalized = raw?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !normalized.isEmpty
+        else {
+            return nil
+        }
+
+        return switch normalized {
+            case "safe": .safe
+            case "suggestive": .suggestive
+            case "erotica", "pornographic": .nsfw
+            default: nil
+        }
     }
 
     static func mapCoverPage(

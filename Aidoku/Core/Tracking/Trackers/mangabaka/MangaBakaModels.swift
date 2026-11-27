@@ -276,6 +276,7 @@ struct MangaBakaSeries: Decodable, Sendable {
     let authors: [String]?
     let artists: [String]?
     let genres: [String]?
+    let contentRating: String?
     let source: SourceLinks?
 
     struct Cover: Decodable, Equatable, Sendable {
@@ -339,6 +340,7 @@ struct MangaBakaSeries: Decodable, Sendable {
         case authors
         case artists
         case genres
+        case contentRating = "content_rating"
         case source
     }
 
@@ -361,6 +363,7 @@ struct MangaBakaSeries: Decodable, Sendable {
         self.authors = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .authors))?.elements
         self.artists = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .artists))?.elements
         self.genres = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .genres))?.elements
+        self.contentRating = try? container.decodeIfPresent(String.self, forKey: .contentRating)
         self.source = try? container.decodeIfPresent(SourceLinks.self, forKey: .source)
     }
 }

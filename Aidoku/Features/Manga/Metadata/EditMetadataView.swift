@@ -13,6 +13,7 @@ struct EditMetadataView: View {
     @StateObject private var viewModel: EditMetadataViewModel
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showingCoverUrlField = false
     @State private var showingImagePicker = false
@@ -26,6 +27,12 @@ struct EditMetadataView: View {
         .hiatus,
         .cancelled,
         .unknown
+    ]
+
+    private let editableContentRatings: [AidokuRunner.ContentRating] = [
+        .safe,
+        .suggestive,
+        .nsfw
     ]
 
     init(
@@ -369,6 +376,33 @@ private extension EditMetadataView {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+            }
+            .padding(.vertical, 2)
+
+            VStack(alignment: .leading, spacing: 6) {
+                fieldInlineHeader(
+                    title: ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
+                    field: .contentRating
+                )
+                let ratingPicker = Picker(
+                    ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
+                    selection: Binding(
+                        get: { viewModel.contentRating },
+                        set: { viewModel.onContentRatingChanged($0) }
+                    )
+                ) {
+                    ForEach(editableContentRatings, id: \.self) { rating in
+                        Text(rating.title).tag(rating)
+                    }
+                }
+                if dynamicTypeSize.isAccessibilitySize {
+                    ratingPicker
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                } else {
+                    ratingPicker
+                        .pickerStyle(.segmented)
+                }
             }
             .padding(.vertical, 2)
         }

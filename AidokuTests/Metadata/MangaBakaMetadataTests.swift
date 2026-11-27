@@ -111,6 +111,58 @@ import Testing
         #expect(MangaBakaMetadataProvider.formatGenre("slice_of_life") == "Slice of Life")
     }
 
+    @Test func mapsMangaBakaContentRatingsAndLenientlyDecodesMissingOrMalformedValues() throws {
+        #expect(MangaBakaMetadataProvider.mapContentRating("safe") == .safe)
+        #expect(MangaBakaMetadataProvider.mapContentRating(" suggestive ") == .suggestive)
+        #expect(MangaBakaMetadataProvider.mapContentRating("EROTICA") == .nsfw)
+        #expect(MangaBakaMetadataProvider.mapContentRating("pornographic") == .nsfw)
+        #expect(MangaBakaMetadataProvider.mapContentRating(nil) == nil)
+        #expect(MangaBakaMetadataProvider.mapContentRating("") == nil)
+        #expect(MangaBakaMetadataProvider.mapContentRating("unrecognized") == nil)
+
+        let json = """
+        {
+          "status": 200,
+          "data": {
+            "id": 9001,
+            "title": "Content Rating Series",
+            "cover": { "raw": { "url": null } },
+            "status": "releasing",
+            "type": "manga",
+            "content_rating": "erotica"
+          }
+        }
+        """
+        let response = try JSONDecoder().decode(
+            MangaBakaResponse<MangaBakaSeries>.self,
+            from: Data(json.utf8)
+        )
+        let series = try #require(response.data)
+        let mapped = MangaBakaMetadataProvider.map(series: series, trackId: "9001")
+        #expect(mapped.contentRating == .nsfw)
+
+        let malformedJson = """
+        {
+          "status": 200,
+          "data": {
+            "id": 9002,
+            "title": "Malformed Content Rating",
+            "cover": { "raw": { "url": null } },
+            "status": "releasing",
+            "type": "manga",
+            "content_rating": 42
+          }
+        }
+        """
+        let malformedResponse = try JSONDecoder().decode(
+            MangaBakaResponse<MangaBakaSeries>.self,
+            from: Data(malformedJson.utf8)
+        )
+        let malformedSeries = try #require(malformedResponse.data)
+        let malformedMapped = MangaBakaMetadataProvider.map(series: malformedSeries, trackId: "9002")
+        #expect(malformedMapped.contentRating == nil)
+    }
+
     @Test func lenientlyDecodesMalformedExtendedFieldsWithoutBreakingSeries() throws {
         let json = """
         {

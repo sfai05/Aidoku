@@ -418,3 +418,161 @@ private struct MockTrackerMetadataProvider: TrackerMetadataProvider {
         #expect(selected == [.cover, .authors, .artists, .description])
     }
 }
+
+@Suite struct MangaMetadataContentRatingTests {
+    @Test func normalizesContentRatingAndMapsCoreDataNSFWValues() {
+        #expect(MangaMetadataService.normalizedContentRating(.unknown) == .safe)
+        #expect(MangaMetadataService.normalizedContentRating(.safe) == .safe)
+        #expect(MangaMetadataService.normalizedContentRating(.suggestive) == .suggestive)
+        #expect(MangaMetadataService.normalizedContentRating(.nsfw) == .nsfw)
+
+        #expect(MangaMetadataService.coreDataNSFWValue(for: .unknown) == 0)
+        #expect(MangaMetadataService.coreDataNSFWValue(for: .safe) == 0)
+        #expect(MangaMetadataService.coreDataNSFWValue(for: .suggestive) == 1)
+        #expect(MangaMetadataService.coreDataNSFWValue(for: .nsfw) == 2)
+    }
+
+    @MainActor
+    @Test func editViewModelTracksAppliesAndResetsContentRating() {
+        let manga = AidokuRunner.Manga(
+            sourceKey: "mangadex",
+            key: "rating-test",
+            title: "Rating Test",
+            status: .ongoing,
+            contentRating: .unknown
+        )
+        let metadata = TrackerMangaMetadata(
+            trackerId: "mangabaka",
+            trackerName: "MangaBaka",
+            trackId: "333",
+            defaultTitle: "Rating Test",
+            titleOptions: [],
+            coverUrl: nil,
+            authors: [],
+            artists: [],
+            status: .ongoing,
+            contentRating: .nsfw,
+            description: nil,
+            tags: []
+        )
+
+        let viewModel = EditMetadataViewModel(
+            source: nil,
+            manga: manga,
+            metadataProvider: MockTrackerMetadataProvider(result: metadata)
+        )
+        #expect(viewModel.contentRating == .safe)
+        #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
+        #expect(!viewModel.hasAnyLockedOrModifiedFields)
+
+        viewModel.onContentRatingChanged(.suggestive)
+        #expect(viewModel.contentRating == .suggestive)
+        #expect(viewModel.isFieldEdited(.contentRating))
+        #expect(viewModel.hasPendingChanges)
+        #expect(viewModel.canSave)
+        #expect(viewModel.hasAnyLockedOrModifiedFields)
+
+        viewModel.onContentRatingChanged(.safe)
+        #expect(viewModel.contentRating == .safe)
+        #expect(!viewModel.isFieldEdited(.contentRating))
+        #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
+        #expect(!viewModel.hasAnyLockedOrModifiedFields)
+
+        viewModel.applyPulledSelection(
+            TrackerMetadataSelection(
+                selectedFields: [.contentRating],
+                selectedTitle: "Rating Test"
+            ),
+            from: metadata
+        )
+        #expect(viewModel.contentRating == .nsfw)
+        #expect(viewModel.isFieldEdited(.contentRating))
+        #expect(viewModel.canSave)
+
+        viewModel.resetField(.contentRating)
+        #expect(viewModel.contentRating == .safe)
+        #expect(!viewModel.isFieldEdited(.contentRating))
+        #expect(!viewModel.hasPendingChanges)
+        #expect(!viewModel.canSave)
+    }
+
+    @Test func pullSheetContentRatingDiffIgnoresMissingOrUnknownAndDetectsChanges() {
+        let safeDraft = MangaMetadataSnapshot(
+            cover: nil,
+            title: "Title",
+            authors: [],
+            artists: [],
+            status: .ongoing,
+            contentRating: .unknown,
+            description: nil,
+            tags: [],
+            editedKeys: []
+        )
+
+        #expect(!MangaBakaMetadataPullSheet.fieldDiffers(
+            .contentRating,
+            currentDraft: safeDraft,
+            candidates: .init(
+                title: "Title",
+                coverUrl: nil,
+                authors: [],
+                artists: [],
+                status: .ongoing,
+                contentRating: nil,
+                description: nil,
+                tags: []
+            )
+        ))
+        #expect(!MangaBakaMetadataPullSheet.fieldDiffers(
+            .contentRating,
+            currentDraft: safeDraft,
+            candidates: .init(
+                title: "Title",
+                coverUrl: nil,
+                authors: [],
+                artists: [],
+                status: .ongoing,
+                contentRating: .unknown,
+                description: nil,
+                tags: []
+            )
+        ))
+        #expect(!MangaBakaMetadataPullSheet.fieldDiffers(
+            .contentRating,
+            currentDraft: safeDraft,
+            candidates: .init(
+                title: "Title",
+                coverUrl: nil,
+                authors: [],
+                artists: [],
+                status: .ongoing,
+                contentRating: .safe,
+                description: nil,
+                tags: []
+            )
+        ))
+        let nsfwCandidates = MangaBakaMetadataPullSheet.PullFieldCandidates(
+            title: "Title",
+            coverUrl: nil,
+            authors: [],
+            artists: [],
+            status: .ongoing,
+            contentRating: .nsfw,
+            description: nil,
+            tags: []
+        )
+        #expect(MangaBakaMetadataPullSheet.fieldDiffers(
+            .contentRating,
+            currentDraft: safeDraft,
+            candidates: nsfwCandidates
+        ))
+        #expect(
+            MangaBakaMetadataPullSheet.defaultSelectedFields(
+                currentDraft: safeDraft,
+                candidates: nsfwCandidates
+            ) == [.contentRating]
+        )
+    }
+}

@@ -24,6 +24,7 @@ final class EditMetadataViewModel: ObservableObject {
     @Published var authorsText: String
     @Published var artistsText: String
     @Published var status: AidokuRunner.PublishingStatus
+    @Published var contentRating: AidokuRunner.ContentRating
     @Published var descriptionText: String
     @Published var tags: [String]
     @Published var newTagText: String = ""
@@ -69,6 +70,7 @@ final class EditMetadataViewModel: ObservableObject {
         self.authorsText = MangaMetadataService.formatPersonList(initial.authors)
         self.artistsText = MangaMetadataService.formatPersonList(initial.artists)
         self.status = initial.status
+        self.contentRating = initial.contentRating
         self.descriptionText = initial.description ?? ""
         self.tags = initial.tags
 
@@ -82,6 +84,7 @@ final class EditMetadataViewModel: ObservableObject {
             authors: MangaMetadataService.parsePersonList(authorsText),
             artists: MangaMetadataService.parsePersonList(artistsText),
             status: status,
+            contentRating: contentRating,
             description: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? nil
                 : descriptionText,
@@ -168,6 +171,14 @@ final class EditMetadataViewModel: ObservableObject {
         reconcileField(.status, matchesBaseline: status == baselineSnapshot.status)
     }
 
+    func onContentRatingChanged(_ newValue: AidokuRunner.ContentRating) {
+        let normalized = MangaMetadataService.normalizedContentRating(newValue)
+        if contentRating != normalized {
+            contentRating = normalized
+        }
+        reconcileField(.contentRating, matchesBaseline: contentRating == baselineSnapshot.contentRating)
+    }
+
     func onDescriptionChanged(_ newValue: String) {
         if descriptionText != newValue {
             descriptionText = newValue
@@ -229,6 +240,8 @@ final class EditMetadataViewModel: ObservableObject {
                 artistsText = MangaMetadataService.formatPersonList(baselineSnapshot.artists)
             case .status:
                 status = baselineSnapshot.status
+            case .contentRating:
+                contentRating = baselineSnapshot.contentRating
             case .description:
                 descriptionText = baselineSnapshot.description ?? ""
             case .tags:
@@ -301,6 +314,11 @@ final class EditMetadataViewModel: ObservableObject {
                         status = pulledStatus
                         markEdited(.status)
                     }
+                case .contentRating:
+                    if let pulledRating = metadata.contentRating, pulledRating != .unknown {
+                        contentRating = MangaMetadataService.normalizedContentRating(pulledRating)
+                        markEdited(.contentRating)
+                    }
                 case .description:
                     descriptionText = (selection.selectedDescription ?? metadata.description) ?? ""
                     markEdited(.description)
@@ -363,6 +381,7 @@ private extension EditMetadataViewModel {
         authorsText = MangaMetadataService.formatPersonList(snapshot.authors)
         artistsText = MangaMetadataService.formatPersonList(snapshot.artists)
         status = snapshot.status
+        contentRating = snapshot.contentRating
         descriptionText = snapshot.description ?? ""
         tags = snapshot.tags
     }

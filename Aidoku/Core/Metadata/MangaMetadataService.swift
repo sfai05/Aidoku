@@ -16,6 +16,7 @@ struct MangaMetadataSnapshot: Equatable, Sendable {
     var authors: [String]
     var artists: [String]
     var status: AidokuRunner.PublishingStatus
+    var contentRating: AidokuRunner.ContentRating
     var description: String?
     var tags: [String]
     var editedKeys: EditedKeys
@@ -26,6 +27,7 @@ struct MangaMetadataSnapshot: Equatable, Sendable {
         authors: [String],
         artists: [String],
         status: AidokuRunner.PublishingStatus,
+        contentRating: AidokuRunner.ContentRating = .safe,
         description: String?,
         tags: [String],
         editedKeys: EditedKeys
@@ -35,6 +37,7 @@ struct MangaMetadataSnapshot: Equatable, Sendable {
         self.authors = authors
         self.artists = artists
         self.status = status
+        self.contentRating = MangaMetadataService.normalizedContentRating(contentRating)
         self.description = description
         self.tags = tags
         self.editedKeys = editedKeys
@@ -46,6 +49,7 @@ struct MangaMetadataSnapshot: Equatable, Sendable {
         self.authors = manga.authors ?? []
         self.artists = manga.artists ?? []
         self.status = manga.status
+        self.contentRating = MangaMetadataService.normalizedContentRating(manga.contentRating)
         self.description = manga.description
         self.tags = manga.tags ?? []
         self.editedKeys = editedKeys
@@ -101,6 +105,24 @@ enum MetadataSaveError: LocalizedError, Equatable {
 }
 
 enum MangaMetadataService {
+    /// Normalizes `.unknown` to `.safe` because Core Data stores only `safe`, `suggestive`, and `nsfw`.
+    static func normalizedContentRating(_ rating: AidokuRunner.ContentRating) -> AidokuRunner.ContentRating {
+        switch rating {
+            case .unknown, .safe: .safe
+            case .suggestive: .suggestive
+            case .nsfw: .nsfw
+        }
+    }
+
+    /// Maps runner `ContentRating` to Core Data `MangaObject.nsfw` (`0 = safe, 1 = suggestive, 2 = nsfw`).
+    static func coreDataNSFWValue(for rating: AidokuRunner.ContentRating) -> Int16 {
+        switch rating {
+            case .unknown, .safe: 0
+            case .suggestive: 1
+            case .nsfw: 2
+        }
+    }
+
     static func parsePersonList(_ text: String) -> [String] {
         text
             .split(separator: ",")
@@ -437,6 +459,14 @@ private extension MangaMetadataService {
             }
         } else if editedFields.contains(.status) {
             object.status = Int16(snapshot.status.rawValue)
+        }
+
+        if resetFields.contains(.contentRating) {
+            if let fetchedSourceManga {
+                object.nsfw = Self.coreDataNSFWValue(for: fetchedSourceManga.contentRating)
+            }
+        } else if editedFields.contains(.contentRating) {
+            object.nsfw = Self.coreDataNSFWValue(for: snapshot.contentRating)
         }
     }
 }
