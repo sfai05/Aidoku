@@ -666,16 +666,10 @@ private extension MangaBakaMetadataPullSheet {
     }
 
     func sortedDescriptionOptions() -> [TrackerDescriptionOption] {
-        let priorityMap = priorityRankMap()
-        return metadata.descriptionOptions.sorted { lhs, rhs in
-            let lRank = priorityMap[lhs.languageCode.lowercased()] ?? Int.max
-            let rRank = priorityMap[rhs.languageCode.lowercased()] ?? Int.max
-            if lRank != rRank { return lRank < rRank }
-            if lhs.languageCode != rhs.languageCode {
-                return lhs.languageCode.localizedCaseInsensitiveCompare(rhs.languageCode) == .orderedAscending
-            }
-            return lhs.sourceName.localizedCaseInsensitiveCompare(rhs.sourceName) == .orderedAscending
-        }
+        TitleLanguagePriorityStore.sortDescriptionOptions(
+            metadata.descriptionOptions,
+            priorityOrder: priorityOrder
+        )
     }
 
     func priorityRankMap() -> [String: Int] {

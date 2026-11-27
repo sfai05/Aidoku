@@ -356,9 +356,39 @@ extension MetadataEnrichmentService {
                     )
                 )
             }
+
+            if language == "zh",
+               containsHanCharacters(cleaned),
+               let traditional = convertSimplifiedToTraditional(cleaned),
+               !traditional.isEmpty {
+                let hantKey = "zh-hant|\(traditional)"
+                if seen.insert(hantKey).inserted {
+                    options.append(
+                        TrackerDescriptionOption(
+                            languageCode: "zh-Hant",
+                            text: traditional,
+                            sourceName: "Bangumi"
+                        )
+                    )
+                }
+            }
         }
 
         return options
+    }
+
+    /// Performs approximate Simplified-to-Traditional Chinese script conversion using ICU (`Hans-Hant`).
+    static func convertSimplifiedToTraditional(_ text: String) -> String? {
+        text.applyingTransform(StringTransform("Hans-Hant"), reverse: false)
+    }
+
+    static func containsHanCharacters(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            (0x4E00...0x9FFF).contains(scalar.value)
+                || (0x3400...0x4DBF).contains(scalar.value)
+                || (0xF900...0xFAFF).contains(scalar.value)
+                || (0x20000...0x2A6DF).contains(scalar.value)
+        }
     }
 
     static func inferBangumiLanguage(for text: String) -> String {
