@@ -28,6 +28,12 @@ struct EditMetadataView: View {
         .unknown
     ]
 
+    private let editableContentRatings: [AidokuRunner.ContentRating] = [
+        .safe,
+        .suggestive,
+        .nsfw
+    ]
+
     init(
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga
@@ -369,6 +375,26 @@ private extension EditMetadataView {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+            }
+            .padding(.vertical, 2)
+
+            VStack(alignment: .leading, spacing: 6) {
+                fieldInlineHeader(
+                    title: ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
+                    field: .contentRating
+                )
+                Picker(
+                    ForkL10n.string("METADATA_FIELD_CONTENT_RATING"),
+                    selection: Binding(
+                        get: { viewModel.contentRating },
+                        set: { viewModel.onContentRatingChanged($0) }
+                    )
+                ) {
+                    ForEach(editableContentRatings, id: \.self) { rating in
+                        Text(rating.title).tag(rating)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
             .padding(.vertical, 2)
         }

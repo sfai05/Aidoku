@@ -77,6 +77,7 @@ struct MangaBakaMetadataPullSheet: View {
             authors: initialAuthors,
             artists: initialArtists,
             status: metadata.status,
+            contentRating: metadata.contentRating,
             description: preferredDescription?.text ?? metadata.description,
             tags: metadata.tags
         )
@@ -122,6 +123,7 @@ struct MangaBakaMetadataPullSheet: View {
             authors: activePulledAuthors,
             artists: activePulledArtists,
             status: metadata.status,
+            contentRating: metadata.contentRating,
             description: activePulledDescription,
             tags: metadata.tags
         )
@@ -447,6 +449,13 @@ private extension MangaBakaMetadataPullSheet {
                     isSame: isSame
                 )
 
+            case .contentRating:
+                textDiffBody(
+                    current: currentDraft.contentRating.title,
+                    incoming: metadata.contentRating?.title ?? "",
+                    isSame: isSame
+                )
+
             case .description:
                 textDiffBody(
                     current: currentDraft.description ?? "",
@@ -686,6 +695,7 @@ private extension MangaBakaMetadataPullSheet {
             case .authors: ForkL10n.string("METADATA_FIELD_AUTHORS")
             case .artists: ForkL10n.string("METADATA_FIELD_ARTISTS")
             case .status: ForkL10n.string("METADATA_FIELD_STATUS")
+            case .contentRating: ForkL10n.string("METADATA_FIELD_CONTENT_RATING")
             case .description: ForkL10n.string("METADATA_SECTION_DESCRIPTION")
             case .tags: ForkL10n.string("METADATA_SECTION_TAGS")
         }
@@ -699,8 +709,29 @@ extension MangaBakaMetadataPullSheet {
         let authors: [String]
         let artists: [String]
         let status: AidokuRunner.PublishingStatus?
+        let contentRating: AidokuRunner.ContentRating?
         let description: String?
         let tags: [String]
+
+        init(
+            title: String,
+            coverUrl: String?,
+            authors: [String],
+            artists: [String],
+            status: AidokuRunner.PublishingStatus?,
+            contentRating: AidokuRunner.ContentRating? = nil,
+            description: String?,
+            tags: [String]
+        ) {
+            self.title = title
+            self.coverUrl = coverUrl
+            self.authors = authors
+            self.artists = artists
+            self.status = status
+            self.contentRating = contentRating
+            self.description = description
+            self.tags = tags
+        }
     }
 
     static func fieldDiffers(
@@ -724,6 +755,11 @@ extension MangaBakaMetadataPullSheet {
             case .status:
                 guard let nextStatus = candidates.status, nextStatus != .unknown else { return false }
                 return currentDraft.status != nextStatus
+            case .contentRating:
+                guard let nextRating = candidates.contentRating, nextRating != .unknown else { return false }
+                let currentNormalized = MangaMetadataService.normalizedContentRating(currentDraft.contentRating)
+                let nextNormalized = MangaMetadataService.normalizedContentRating(nextRating)
+                return currentNormalized != nextNormalized
             case .description:
                 let nextDesc = candidates.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 guard !nextDesc.isEmpty else { return false }
@@ -760,6 +796,7 @@ extension MangaBakaMetadataPullSheet {
             authors: metadata.authors,
             artists: metadata.artists,
             status: metadata.status,
+            contentRating: metadata.contentRating,
             description: metadata.description,
             tags: metadata.tags
         )
@@ -777,6 +814,7 @@ extension MangaBakaMetadataPullSheet {
             authors: metadata.authors,
             artists: metadata.artists,
             status: metadata.status,
+            contentRating: metadata.contentRating,
             description: metadata.description,
             tags: metadata.tags
         )

@@ -91,6 +91,7 @@ struct TrackerMangaMetadata: Identifiable, Equatable, Sendable {
     let artists: [String]
     let nativeArtists: [String]
     let status: AidokuRunner.PublishingStatus?
+    let contentRating: AidokuRunner.ContentRating?
     let description: String?
     let descriptionOptions: [TrackerDescriptionOption]
     let tags: [String]
@@ -113,6 +114,7 @@ struct TrackerMangaMetadata: Identifiable, Equatable, Sendable {
         artists: [String],
         nativeArtists: [String] = [],
         status: AidokuRunner.PublishingStatus?,
+        contentRating: AidokuRunner.ContentRating? = nil,
         description: String?,
         descriptionOptions: [TrackerDescriptionOption] = [],
         tags: [String]
@@ -134,6 +136,7 @@ struct TrackerMangaMetadata: Identifiable, Equatable, Sendable {
         self.artists = artists
         self.nativeArtists = nativeArtists
         self.status = status
+        self.contentRating = contentRating
         self.description = description
         self.descriptionOptions = descriptionOptions
         self.tags = tags
@@ -172,6 +175,7 @@ enum MetadataEditableField: String, CaseIterable, Hashable, Sendable {
     case authors
     case artists
     case status
+    case contentRating
     case description
     case tags
 
@@ -182,6 +186,7 @@ enum MetadataEditableField: String, CaseIterable, Hashable, Sendable {
             case .authors: .authors
             case .artists: .artists
             case .status: .status
+            case .contentRating: .contentRating
             case .description: .description
             case .tags: .tags
         }
