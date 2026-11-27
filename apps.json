@@ -31,6 +31,16 @@
       "versions": [
         {
           "version": "0.9",
+          "buildVersion": "104",
+          "date": "2026-11-27T20:52:50Z",
+          "localizedDescription": "Enriched MangaBaka metadata pull: original-language author & artist names via AniList, localized descriptions via MangaDex & Bangumi following local language priority, and an interactive all-covers gallery picker from MangaBaka /images.",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.104/Kodoku-v0.9-kodoku.104.ipa",
+          "size": 15289591,
+          "minOSVersion": "15.0",
+          "sha256": "397b6fb2396024f73ac7736c8349d7a6ea680c0d9a59bc0b37d230a1c1ddc947"
+        },
+        {
+          "version": "0.9",
           "buildVersion": "103",
           "date": "2026-11-27T18:36:12Z",
           "localizedDescription": "Add manual manga metadata editing (cover, title, authors, artists, status, description, tags), MangaBaka tracker metadata pull with configurable local title language priority, PocketBase per-field metadata sync, and sync UX improvements with 60s default debounce and lock-screen flush.",
