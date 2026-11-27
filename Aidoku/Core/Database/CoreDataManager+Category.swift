@@ -95,6 +95,8 @@ extension CoreDataManager {
         categoryObject.title = title
         categoryObject.sort = lastCategoryIndex + 1
         categoryObject.group = group
+        // Fork: Record category creation for PocketBase sync
+        SyncTombstoneStore.shared.recordCategoryUpsert(title: title)
         return categoryObject
     }
 
@@ -102,6 +104,8 @@ extension CoreDataManager {
     func removeCategory(title: String, context: NSManagedObjectContext) {
         if let object = self.getCategory(title: title, context: context) {
             context.delete(object)
+            // Fork: Record category deletion tombstone for PocketBase sync
+            SyncTombstoneStore.shared.recordCategoryDeletion(title: title)
         }
         // update sort fields
         let categories = getCategories(sorted: true, context: context)
@@ -119,6 +123,9 @@ extension CoreDataManager {
             return false
         }
         object.title = newTitle
+        // Fork: Record category rename tombstones for PocketBase sync
+        SyncTombstoneStore.shared.recordCategoryDeletion(title: title)
+        SyncTombstoneStore.shared.recordCategoryUpsert(title: newTitle)
         return true
     }
 
@@ -152,6 +159,8 @@ extension CoreDataManager {
         for (index, category) in categories.enumerated() where category.sort != index {
             category.sort = Int16(index)
         }
+        // Fork: Record category reorder for PocketBase sync
+        SyncTombstoneStore.shared.recordCategoryUpserts(titles: categories.compactMap(\.title))
     }
 
     /// Add categories to library manga.
@@ -161,6 +170,8 @@ extension CoreDataManager {
             guard let categoryObject = getCategory(title: category, context: context) else { continue }
             libraryObject.addToCategories(categoryObject)
         }
+        // Fork: Record manga category assignment update for PocketBase sync
+        SyncTombstoneStore.shared.recordMangaCategoriesUpdate(mangaId: mangaId)
     }
 
     func addCategoriesToManga(mangaId: MangaIdentifier, categories: [CategoryObject], context: NSManagedObjectContext) {
@@ -168,6 +179,8 @@ extension CoreDataManager {
         for categoryObject in categories {
             libraryObject.addToCategories(categoryObject)
         }
+        // Fork: Record manga category assignment update for PocketBase sync
+        SyncTombstoneStore.shared.recordMangaCategoriesUpdate(mangaId: mangaId)
     }
 
     func addCategoriesToManga(mangaId: MangaIdentifier, categories: [String]) async {
@@ -189,6 +202,8 @@ extension CoreDataManager {
                 guard let categoryObject = self.getCategory(title: category, context: context) else { continue }
                 libraryObject.removeFromCategories(categoryObject)
             }
+            // Fork: Record manga category assignment update for PocketBase sync
+            SyncTombstoneStore.shared.recordMangaCategoriesUpdate(mangaId: mangaId)
             do {
                 try context.save()
             } catch {
@@ -206,6 +221,8 @@ extension CoreDataManager {
             libraryObject.categories = NSSet(array: categories.compactMap {
                 self.getCategory(title: $0, context: context)
             })
+            // Fork: Record manga category assignment update for PocketBase sync
+            SyncTombstoneStore.shared.recordMangaCategoriesUpdate(mangaId: mangaId)
             do {
                 try context.save()
             } catch {

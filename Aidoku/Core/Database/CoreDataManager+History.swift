@@ -41,6 +41,8 @@ extension CoreDataManager {
         }
 
         request.predicate = excludePredicate
+        // Fork: Record non-library history deletions for PocketBase sync
+        SyncTombstoneStore.shared.recordHistoryDeletions(matching: request, context: context)
         clear(request: request, context: context)
     }
 

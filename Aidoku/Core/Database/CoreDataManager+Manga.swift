@@ -145,6 +145,8 @@ extension CoreDataManager {
             object.load(from: manga, override: override)
             do {
                 try context.save()
+                // Fork: Record manga detail update for PocketBase sync
+                SyncTombstoneStore.shared.recordMangaDetailsUpdate(mangaId: manga.identifier)
             } catch {
                 LogManager.logger.error("CoreDataManager.updateMangaDetails: \(error)")
             }

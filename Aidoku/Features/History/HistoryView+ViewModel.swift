@@ -243,6 +243,8 @@ extension HistoryView.ViewModel {
                 CoreDataManager.shared.clearHistory(context: context)
                 try? context.save()
             }
+            // Fork: Record full history clear tombstone for PocketBase sync
+            SyncEngine.shared.recordAllHistoryCleared()
             filteredHistory = [:]
             historyData = [:]
             offset = 0
