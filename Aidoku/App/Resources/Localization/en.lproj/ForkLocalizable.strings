@@ -233,3 +233,32 @@
 "METADATA_COVERS_MAIN_LABEL" = "Main Cover";
 "METADATA_COVERS_VOL_FORMAT" = "Vol. %@";
 "METADATA_COVERS_VOL_BACK_FORMAT" = "Vol. %@ (Back)";
+
+/* MangaBaka Authentication & Tracking */
+"MANGABAKA_AUTH_SHEET_TITLE" = "MangaBaka Authentication";
+"MANGABAKA_AUTH_DONE" = "Done";
+"MANGABAKA_AUTH_API_KEY_BADGE" = "API Key";
+"MANGABAKA_AUTH_STATUS_SECTION" = "Current Status";
+"MANGABAKA_AUTH_STATUS_LABEL" = "Method";
+"MANGABAKA_AUTH_METHOD_API_KEY" = "API Key (PAT)";
+"MANGABAKA_AUTH_METHOD_OAUTH" = "OAuth";
+"MANGABAKA_AUTH_METHOD_SIGNED_OUT" = "Not Signed In";
+"MANGABAKA_AUTH_ACCOUNT_LABEL" = "Account";
+"MANGABAKA_AUTH_OAUTH_EXPIRED_HINT" = "Your OAuth session expired. Switching to a Personal Access Token keeps tracking stable for 1 year without affecting your existing manga links.";
+"MANGABAKA_AUTH_PAT_SECTION" = "Personal Access Token (Recommended)";
+"MANGABAKA_AUTH_PAT_PLACEHOLDER" = "mb-...";
+"MANGABAKA_AUTH_PAT_VERIFY_SAVE" = "Verify & Save API Key";
+"MANGABAKA_AUTH_PAT_OPEN_DEV" = "Open MangaBaka Developer Settings";
+"MANGABAKA_AUTH_PAT_FOOTER" = "Generate a Personal Access Token (mb-...) valid for 1 year. Stored securely in iOS Keychain, excluded from backups and sync, and preserves your existing tracked manga links.";
+"MANGABAKA_AUTH_PAT_SUCCESS_FORMAT" = "Verified as %@. Your API Key is saved.";
+"MANGABAKA_AUTH_PAT_SCOPE_WARNING_FORMAT" = "Note: This token appears to lack scope(s): %@. Library sync requires library.read and library.write.";
+"MANGABAKA_AUTH_OAUTH_SECTION" = "OAuth Login";
+"MANGABAKA_AUTH_OAUTH_SIGN_IN" = "Sign In with OAuth";
+"MANGABAKA_AUTH_OAUTH_REFRESH" = "Refresh OAuth Login";
+"MANGABAKA_AUTH_OAUTH_FOOTER" = "Switches to OAuth in browser while keeping existing tracked manga links.";
+"MANGABAKA_AUTH_LOGOUT_BUTTON" = "Log Out from MangaBaka";
+"MANGABAKA_AUTH_LOGOUT_CONFIRM_TITLE" = "Log Out from MangaBaka?";
+"MANGABAKA_AUTH_ERROR_INVALID_FORMAT" = "Could not verify API Key: %@";
+"MANGABAKA_AUTH_PAT_REPLACE_PLACEHOLDER" = "Enter new API key to replace (mb-...)";
+"MANGABAKA_AUTH_PAT_REMOVE" = "Remove Saved API Key";
+"MANGABAKA_AUTH_PAT_REMOVED" = "Saved API key removed. Your tracking links were kept.";

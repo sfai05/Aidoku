@@ -399,15 +399,35 @@ enum MangaBakaLibraryState: String, Codable {
     }
 }
 
-struct MangaBakaLibraryEntry: Codable {
+struct MangaBakaLibraryEntry: Codable, Equatable, Sendable {
     var id: Int?
     var seriesId: Int?
     var state: MangaBakaLibraryState?
-    var rating: Int?
-    var progressChapter: Int?
-    var progressVolume: Int?
+    var rating: Double?
+    var progressChapter: Double?
+    var progressVolume: Double?
     var startDate: String?
     var finishDate: String?
+
+    init(
+        id: Int? = nil,
+        seriesId: Int? = nil,
+        state: MangaBakaLibraryState? = nil,
+        rating: Double? = nil,
+        progressChapter: Double? = nil,
+        progressVolume: Double? = nil,
+        startDate: String? = nil,
+        finishDate: String? = nil
+    ) {
+        self.id = id
+        self.seriesId = seriesId
+        self.state = state
+        self.rating = rating
+        self.progressChapter = progressChapter
+        self.progressVolume = progressVolume
+        self.startDate = startDate
+        self.finishDate = finishDate
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -436,11 +456,46 @@ struct MangaBakaLibraryEntry: Codable {
             }
         }
         if let finishDate {
+            // Fork: Encode finishDate under .finishDate instead of overwriting .startDate
             if finishDate.hasPrefix("1969-12-31") || finishDate.hasPrefix("1970-01-01") {
-                try container.encodeNil(forKey: .startDate)
+                try container.encodeNil(forKey: .finishDate)
             } else {
-                try container.encode(finishDate, forKey: .startDate)
+                try container.encode(finishDate, forKey: .finishDate)
             }
         }
+    }
+}
+
+// MARK: - Fork: User profile model for PAT verification
+struct MangaBakaProfile: Decodable, Equatable, Sendable {
+    let id: String
+    let nickname: String?
+    let preferredUsername: String?
+    let authType: String?
+    let scopes: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case nickname
+        case preferredUsername = "preferred_username"
+        case authType = "auth_type"
+        case scopes
+    }
+
+    var displayName: String {
+        let candidates = [preferredUsername, nickname, id]
+        for candidate in candidates {
+            let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return id
+    }
+
+    /// Returns missing library scopes when the token explicitly restricts non-empty scopes.
+    var missingLibraryScopes: [String] {
+        guard let scopes, !scopes.isEmpty else { return [] }
+        return ["library.read", "library.write"].filter { !scopes.contains($0) }
     }
 }
