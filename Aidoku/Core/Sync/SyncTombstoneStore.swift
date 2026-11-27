@@ -117,7 +117,8 @@ final class SyncTombstoneStore: @unchecked Sendable {
                 categoryUpserts: tombstones.categoryUpserts + state.tombstones.categoryUpserts,
                 trackUpserts: tombstones.trackUpserts + state.tombstones.trackUpserts,
                 mangaCategoryUpdates: tombstones.mangaCategoryUpdates + state.tombstones.mangaCategoryUpdates,
-                mangaDetailsUpdates: tombstones.mangaDetailsUpdates + state.tombstones.mangaDetailsUpdates
+                mangaDetailsUpdates: tombstones.mangaDetailsUpdates + state.tombstones.mangaDetailsUpdates,
+                mangaFieldUpdates: tombstones.mangaFieldUpdates + state.tombstones.mangaFieldUpdates
             ).canonicalized()
             state.tombstones = merged
         } else {
@@ -289,6 +290,41 @@ final class SyncTombstoneStore: @unchecked Sendable {
 
     func recordMangaDetailsUpdate(mangaId: MangaIdentifier, at date: Date? = nil) {
         mutateIfActive(at: date, coalesceWithin: 2) { state, timestamp in
+            Self.upsertMaxDate(
+                &state.tombstones.mangaDetailsUpdates,
+                entry: SyncMangaCategoryUpdate(mangaId: mangaId, updatedAt: timestamp),
+                matches: { $0.mangaIdentifier == mangaId },
+                date: \.updatedAt
+            )
+            state.hasPendingLocalChanges = true
+        }
+    }
+
+    func recordMangaFieldUpdates(
+        mangaId: MangaIdentifier,
+        editedBits: EditedKeys,
+        resetBits: EditedKeys,
+        at date: Date? = nil
+    ) {
+        let effectiveReset = resetBits.subtracting(editedBits)
+        guard !editedBits.isEmpty || !effectiveReset.isEmpty else { return }
+        mutateIfActive(at: date) { state, timestamp in
+            for bit in EditedKeys.allMetadataBitFlags {
+                let isEdited = editedBits.contains(bit)
+                let isReset = effectiveReset.contains(bit)
+                guard isEdited || isReset else { continue }
+                Self.upsertMaxDate(
+                    &state.tombstones.mangaFieldUpdates,
+                    entry: SyncMangaFieldUpdate(
+                        mangaId: mangaId,
+                        fieldBit: bit.rawValue,
+                        updatedAt: timestamp,
+                        isReset: isReset
+                    ),
+                    matches: { $0.mangaIdentifier == mangaId && $0.fieldBit == bit.rawValue },
+                    date: \.updatedAt
+                )
+            }
             Self.upsertMaxDate(
                 &state.tombstones.mangaDetailsUpdates,
                 entry: SyncMangaCategoryUpdate(mangaId: mangaId, updatedAt: timestamp),

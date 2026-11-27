@@ -22,6 +22,8 @@ struct SettingsTrackingView: View {
     @State private var loadingTrackerId: String?
     @State private var logoutTrackerName: String?
     @State private var showLogoutAlert = false
+    // Fork: Live summary of local title language priority order
+    @State private var titleLanguageSummary = TitleLanguagePriorityStore.shared.summaryText
 
     private let iconSize: CGFloat = 42
     private let iconCornerRadius: CGFloat = 42 * 0.225
@@ -53,6 +55,23 @@ struct SettingsTrackingView: View {
                 ))
             } footer: {
                 Text(NSLocalizedString("AUTO_SYNC_HISTORY_INFO"))
+            }
+
+            // Fork: Metadata title language priority order
+            Section {
+                NavigationLink {
+                    TitleLanguagePriorityView()
+                } label: {
+                    HStack {
+                        Text(ForkL10n.string("METADATA_TITLE_LANGUAGE_PRIORITY"))
+                        Spacer()
+                        Text(titleLanguageSummary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            } footer: {
+                Text(ForkL10n.string("METADATA_TITLE_LANGUAGE_PRIORITY_FOOTER"))
             }
 
             Section(NSLocalizedString("TRACKERS")) {
@@ -182,6 +201,10 @@ struct SettingsTrackingView: View {
             Task {
                 await loadEnhancedTrackerSources()
             }
+        }
+        // Fork: Refresh title language summary when order changes
+        .onReceive(NotificationCenter.default.publisher(for: .forkTitleLanguagePriorityChanged)) { _ in
+            titleLanguageSummary = TitleLanguagePriorityStore.shared.summaryText
         }
         .task {
             guard !loadedData else { return }

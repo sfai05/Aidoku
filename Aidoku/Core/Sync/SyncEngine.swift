@@ -3,6 +3,7 @@
 //  Aidoku
 //
 
+import AidokuRunner
 import Foundation
 import UIKit
 
@@ -242,7 +243,9 @@ final class SyncObserverBridge: @unchecked Sendable {
                     event = .trackAdded(trackerId: item.trackerId, mangaId: item.mangaId)
                 }
             case .updateMangaDetails:
-                if let manga = notification.object as? Manga {
+                if let manga = notification.object as? AidokuRunner.Manga {
+                    event = .mangaDetailsUpdated(manga.identifier)
+                } else if let manga = notification.object as? Manga {
                     event = .mangaDetailsUpdated(manga.identifier)
                 } else if let mangaId = notification.object as? MangaIdentifier {
                     event = .mangaDetailsUpdated(mangaId)

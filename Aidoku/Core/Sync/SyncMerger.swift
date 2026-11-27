@@ -61,7 +61,8 @@ enum SyncMerger {
 
         let mergedManga = mergeManga(
             inputs: inputs,
-            deletedLibraryIds: deletedLibraryIds
+            deletedLibraryIds: deletedLibraryIds,
+            mergedFieldUpdates: tombstones.mangaFieldUpdates
         )
 
         let mergedChapters = mergeChapters(
@@ -195,7 +196,8 @@ extension SyncMerger {
             categoryUpserts: tombstones.categoryUpserts.filter { $0.updatedAt >= cutoff },
             trackUpserts: tombstones.trackUpserts.filter { $0.updatedAt >= cutoff },
             mangaCategoryUpdates: tombstones.mangaCategoryUpdates.filter { $0.updatedAt >= cutoff },
-            mangaDetailsUpdates: tombstones.mangaDetailsUpdates.filter { $0.updatedAt >= cutoff }
+            mangaDetailsUpdates: tombstones.mangaDetailsUpdates.filter { $0.updatedAt >= cutoff },
+            mangaFieldUpdates: tombstones.mangaFieldUpdates.filter { $0.updatedAt >= cutoff }
         )
     }
 
@@ -253,7 +255,8 @@ private extension SyncMerger {
             categoryUpserts: local.categoryUpserts + remote.categoryUpserts,
             trackUpserts: local.trackUpserts + remote.trackUpserts,
             mangaCategoryUpdates: local.mangaCategoryUpdates + remote.mangaCategoryUpdates,
-            mangaDetailsUpdates: local.mangaDetailsUpdates + remote.mangaDetailsUpdates
+            mangaDetailsUpdates: local.mangaDetailsUpdates + remote.mangaDetailsUpdates,
+            mangaFieldUpdates: local.mangaFieldUpdates + remote.mangaFieldUpdates
         ).canonicalized()
     }
 
@@ -446,7 +449,8 @@ private extension SyncMerger {
 
     static func mergeManga(
         inputs: MergeInputs,
-        deletedLibraryIds: Set<MangaIdentifier>
+        deletedLibraryIds: Set<MangaIdentifier>,
+        mergedFieldUpdates: [SyncMangaFieldUpdate]
     ) -> [BackupManga] {
         let localLibMap = Dictionary(
             (inputs.local.backup.library ?? []).map { ($0.identifier, $0) },
@@ -463,6 +467,18 @@ private extension SyncMerger {
         let remoteDetailsDates = Dictionary(
             inputs.remote.tombstones.mangaDetailsUpdates.map { ($0.mangaIdentifier, $0.updatedAt) },
             uniquingKeysWith: max
+        )
+        let localFieldUpdates = Dictionary(
+            inputs.local.tombstones.mangaFieldUpdates.map { ($0.fieldKey, $0) },
+            uniquingKeysWith: { latestFieldUpdate($0, $1) }
+        )
+        let remoteFieldUpdates = Dictionary(
+            inputs.remote.tombstones.mangaFieldUpdates.map { ($0.fieldKey, $0) },
+            uniquingKeysWith: { latestFieldUpdate($0, $1) }
+        )
+        let mergedFieldMap = Dictionary(
+            mergedFieldUpdates.map { ($0.fieldKey, $0) },
+            uniquingKeysWith: { latestFieldUpdate($0, $1) }
         )
         let localMap = Dictionary(
             (inputs.local.backup.manga ?? []).map { (MangaIdentifier(sourceKey: $0.sourceId, mangaKey: $0.id), $0) },
@@ -486,7 +502,13 @@ private extension SyncMerger {
                     )
                     let base = preferLocal ? lItem : rItem
                     let other = preferLocal ? rItem : lItem
-                    result.append(mergeMangaEntry(base: base, other: other))
+                    let context = MangaFieldMergeContext(
+                        id: id,
+                        baseFieldUpdates: preferLocal ? localFieldUpdates : remoteFieldUpdates,
+                        otherFieldUpdates: preferLocal ? remoteFieldUpdates : localFieldUpdates,
+                        mergedFieldUpdates: mergedFieldMap
+                    )
+                    result.append(mergeMangaEntry(base: base, other: other, context: context))
                 case let (.some(item), .none), let (.none, .some(item)):
                     result.append(item)
                 case (.none, .none):
@@ -496,44 +518,44 @@ private extension SyncMerger {
         return result.sorted { ($0.sourceId, $0.id) < ($1.sourceId, $1.id) }
     }
 
-    static func mergeMangaEntry(base: BackupManga, other: BackupManga) -> BackupManga {
+    struct MangaFieldMergeContext {
+        let id: MangaIdentifier
+        let baseFieldUpdates: [SyncMangaFieldKey: SyncMangaFieldUpdate]
+        let otherFieldUpdates: [SyncMangaFieldKey: SyncMangaFieldUpdate]
+        let mergedFieldUpdates: [SyncMangaFieldKey: SyncMangaFieldUpdate]
+    }
+
+    static func mergeMangaEntry(
+        base: BackupManga,
+        other: BackupManga,
+        context: MangaFieldMergeContext
+    ) -> BackupManga {
         let baseEdited = EditedKeys(rawValue: Int32(base.editedKeys ?? 0))
         let otherEdited = EditedKeys(rawValue: Int32(other.editedKeys ?? 0))
         var merged = base
-        let combinedEdited = baseEdited.union(otherEdited)
+        let knownBits = EditedKeys.allMetadataBitFlags.reduce(into: EditedKeys()) { $0.insert($1) }
+        // Preserve any future upstream EditedKeys bits (>= 1 << 11) untouched across sync merges.
+        var combinedEdited = baseEdited.union(otherEdited).subtracting(knownBits)
 
-        if !baseEdited.contains(.title) && otherEdited.contains(.title) {
-            merged.title = other.title
-        }
-        if !baseEdited.contains(.authors) && otherEdited.contains(.authors) {
-            merged.author = other.author
-        }
-        if !baseEdited.contains(.artists) && otherEdited.contains(.artists) {
-            merged.artist = other.artist
-        }
-        if !baseEdited.contains(.description) && otherEdited.contains(.description) {
-            merged.desc = other.desc
-        }
-        if !baseEdited.contains(.tags) && otherEdited.contains(.tags) {
-            merged.tags = other.tags
-        }
-        if !baseEdited.contains(.cover) && otherEdited.contains(.cover) {
-            merged.cover = other.cover
-        }
-        if !baseEdited.contains(.url) && otherEdited.contains(.url) {
-            merged.url = other.url
-        }
-        if !baseEdited.contains(.status) && otherEdited.contains(.status) {
-            merged.status = other.status
-        }
-        if !baseEdited.contains(.contentRating) && otherEdited.contains(.contentRating) {
-            merged.nsfw = other.nsfw
-        }
-        if !baseEdited.contains(.viewer) && otherEdited.contains(.viewer) {
-            merged.viewer = other.viewer
-        }
-        if !baseEdited.contains(.neverUpdate) && otherEdited.contains(.neverUpdate) {
-            merged.neverUpdate = other.neverUpdate
+        for bit in EditedKeys.allMetadataBitFlags {
+            let key = SyncMangaFieldKey(
+                sourceId: context.id.sourceKey,
+                mangaId: context.id.mangaKey,
+                fieldBit: bit.rawValue
+            )
+            let decision = resolveEditedField(
+                bit: bit,
+                baseEdited: baseEdited,
+                otherEdited: otherEdited,
+                key: key,
+                context: context
+            )
+            if decision.isEdited {
+                combinedEdited.insert(bit)
+            }
+            if decision.copyFromOther {
+                copyMangaField(bit, from: other, into: &merged)
+            }
         }
 
         if combinedEdited.rawValue != 0 || base.editedKeys != nil || other.editedKeys != nil {
@@ -541,6 +563,66 @@ private extension SyncMerger {
         }
         merged.nextUpdateTime = maxOptionalDate(base.nextUpdateTime, other.nextUpdateTime)
         return merged
+    }
+
+    static func latestFieldUpdate(_ lhs: SyncMangaFieldUpdate, _ rhs: SyncMangaFieldUpdate) -> SyncMangaFieldUpdate {
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt > rhs.updatedAt ? lhs : rhs
+        }
+        return !lhs.isReset && rhs.isReset ? lhs : rhs
+    }
+
+    static func resolveEditedField(
+        bit: EditedKeys,
+        baseEdited: EditedKeys,
+        otherEdited: EditedKeys,
+        key: SyncMangaFieldKey,
+        context: MangaFieldMergeContext
+    ) -> (isEdited: Bool, copyFromOther: Bool) {
+        let baseHasBit = baseEdited.contains(bit)
+        let otherHasBit = otherEdited.contains(bit)
+        let baseUpdate = context.baseFieldUpdates[key]
+        let otherUpdate = context.otherFieldUpdates[key]
+        let mergedUpdate = context.mergedFieldUpdates[key]
+
+        if mergedUpdate?.isReset == true {
+            return (false, baseHasBit && !otherHasBit)
+        }
+
+        if baseHasBit && otherHasBit {
+            if let otherUpdate, !otherUpdate.isReset {
+                if let baseUpdate, !baseUpdate.isReset {
+                    return (true, otherUpdate.updatedAt > baseUpdate.updatedAt)
+                }
+                if baseUpdate == nil {
+                    return (true, true)
+                }
+            }
+            return (true, false)
+        }
+
+        if !baseHasBit && otherHasBit {
+            return (true, true)
+        }
+
+        return (baseHasBit, false)
+    }
+
+    static func copyMangaField(_ bit: EditedKeys, from source: BackupManga, into target: inout BackupManga) {
+        switch bit {
+            case .title: target.title = source.title
+            case .authors: target.author = source.author
+            case .artists: target.artist = source.artist
+            case .description: target.desc = source.desc
+            case .tags: target.tags = source.tags
+            case .cover: target.cover = source.cover
+            case .url: target.url = source.url
+            case .status: target.status = source.status
+            case .contentRating: target.nsfw = source.nsfw
+            case .viewer: target.viewer = source.viewer
+            case .neverUpdate: target.neverUpdate = source.neverUpdate
+            default: break
+        }
     }
 
     static func mergeChapters(
@@ -982,6 +1064,14 @@ private struct SyncSemanticState: Equatable {
         let date: RoundedDate
     }
 
+    struct FieldUpdateKey: Equatable {
+        let sourceId: String
+        let mangaId: String
+        let fieldBit: Int32
+        let date: RoundedDate
+        let isReset: Bool
+    }
+
     struct TombstoneKey: Equatable {
         let library: [MangaDateKey]
         let history: [ChapterDateKey]
@@ -993,6 +1083,7 @@ private struct SyncSemanticState: Equatable {
         let trackUpserts: [TrackDateKey]
         let mangaCategoryUpdates: [MangaDateKey]
         let mangaDetailsUpdates: [MangaDateKey]
+        let mangaFieldUpdates: [FieldUpdateKey]
     }
 
     struct LibraryKey: Equatable {
@@ -1223,6 +1314,15 @@ private struct SyncSemanticState: Equatable {
             },
             mangaDetailsUpdates: canonicalTombstones.mangaDetailsUpdates.map {
                 MangaDateKey(sourceId: $0.sourceId, mangaId: $0.mangaId, date: RoundedDate($0.updatedAt))
+            },
+            mangaFieldUpdates: canonicalTombstones.mangaFieldUpdates.map {
+                FieldUpdateKey(
+                    sourceId: $0.sourceId,
+                    mangaId: $0.mangaId,
+                    fieldBit: $0.fieldBit,
+                    date: RoundedDate($0.updatedAt),
+                    isReset: $0.isReset
+                )
             }
         )
     }
