@@ -1,0 +1,286 @@
+name: Kodoku Release & SideStore Source
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (optional; defaults to v<version>-kodoku.<build>)"
+        required: false
+        type: string
+      build_number:
+        description: "Build number override (optional; defaults to 100 + run_number)"
+        required: false
+        type: string
+      release_notes:
+        description: "Release notes for GitHub Release and SideStore/AltStore (optional)"
+        required: false
+        type: string
+      publish_release:
+        description: "Publish GitHub Release and update SideStore/AltStore source (altstore branch)"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: xcode-27
+    outputs:
+      ipa_name: ${{ steps.package.outputs.ipa_name }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      marketing_version: ${{ steps.metadata.outputs.marketing_version }}
+      build_number: ${{ steps.build_num.outputs.build_number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run SideStore source unit tests
+        run: python3 -m unittest discover -s .github/workflows/supporting/fork -p "test_*.py" -v
+
+      - name: Resolve and validate build number
+        id: build_num
+        env:
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ -n "$INPUT_BUILD_NUMBER" ]; then
+            BUILD_NUMBER="$INPUT_BUILD_NUMBER"
+          else
+            BUILD_NUMBER="$((100 + RUN_NUMBER))"
+          fi
+          if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Invalid build_number '$BUILD_NUMBER'; expected numeric dot-separated version."
+            exit 1
+          fi
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Archive unsigned Kodoku IPA
+        env:
+          BUILD_NUMBER: ${{ steps.build_num.outputs.build_number }}
+        run: |
+          xcodebuild \
+            -scheme "Aidoku" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            archive \
+            -archivePath build/Kodoku.xcarchive \
+            -skipPackagePluginValidation \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGN_IDENTITY= \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify built Info.plist and resolve release tag
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          EXPECTED_BUILD_NUMBER: ${{ steps.build_num.outputs.build_number }}
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+
+          plist_path = "build/Kodoku.xcarchive/Products/Applications/Aidoku.app/Info.plist"
+          with open(plist_path, "rb") as f:
+              info = plistlib.load(f)
+
+          assert info.get("CFBundleIdentifier") == "io.github.sfai05.Kodoku", (
+              f"Unexpected CFBundleIdentifier: {info.get('CFBundleIdentifier')}"
+          )
+          assert info.get("CFBundleDisplayName") == "Kodoku", (
+              f"Unexpected CFBundleDisplayName: {info.get('CFBundleDisplayName')}"
+          )
+          assert info.get("CFBundleVersion") == os.environ["EXPECTED_BUILD_NUMBER"], (
+              f"Unexpected CFBundleVersion: {info.get('CFBundleVersion')}"
+          )
+          assert "ICLOUD_CONTAINER_ID" not in info, "ICLOUD_CONTAINER_ID must not be in Info.plist"
+          assert "remote-notification" not in info.get("UIBackgroundModes", []), (
+              "remote-notification must not be in UIBackgroundModes"
+          )
+
+          marketing_version = str(info["CFBundleShortVersionString"])
+          event_name = os.environ["EVENT_NAME"]
+          if event_name == "push":
+              release_tag = os.environ["REF_NAME"]
+          elif os.environ["INPUT_TAG"]:
+              release_tag = os.environ["INPUT_TAG"]
+          else:
+              release_tag = f"v{marketing_version}-kodoku.{os.environ['EXPECTED_BUILD_NUMBER']}"
+
+          if not re.fullmatch(r"[A-Za-z0-9._-]+", release_tag):
+              raise ValueError(f"Invalid release tag: {release_tag!r}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"marketing_version={marketing_version}\n")
+              out.write(f"release_tag={release_tag}\n")
+          PY
+
+      - name: Package unsigned IPA
+        id: package
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
+        run: |
+          IPA_NAME="Kodoku-${RELEASE_TAG}.ipa"
+          mkdir -p build/ipa/Payload
+          cp -R build/Kodoku.xcarchive/Products/Applications/Aidoku.app build/ipa/Payload/Aidoku.app
+          (cd build/ipa && zip -qr "../../${IPA_NAME}" Payload)
+          echo "ipa_name=$IPA_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload IPA build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kodoku-ipa
+          path: ${{ steps.package.outputs.ipa_name }}
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build-ipa
+    if: ${{ github.event_name == 'push' || inputs.publish_release }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kodoku-ipa
+
+      - name: Publish GitHub Release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
+          IPA_NAME: ${{ needs.build-ipa.outputs.ipa_name }}
+          INPUT_RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [ ! -s "$IPA_NAME" ]; then
+            echo "::error::Downloaded IPA '$IPA_NAME' is missing or empty."
+            exit 1
+          fi
+
+          NOTES_FILE=""
+          if [ -n "$INPUT_RELEASE_NOTES" ]; then
+            NOTES_FILE="$(mktemp)"
+            printf '%s\n' "$INPUT_RELEASE_NOTES" > "$NOTES_FILE"
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$IPA_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+            if [ -n "$NOTES_FILE" ]; then
+              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES_FILE"
+            fi
+          else
+            if [ -n "$NOTES_FILE" ]; then
+              gh release create "$RELEASE_TAG" "$IPA_NAME" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "Kodoku $RELEASE_TAG" \
+                --notes-file "$NOTES_FILE"
+            else
+              gh release create "$RELEASE_TAG" "$IPA_NAME" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "Kodoku $RELEASE_TAG" \
+                --generate-notes
+            fi
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release_metadata.json
+          python3 - <<'PY'
+          import json, os
+
+          with open("release_metadata.json", "r", encoding="utf-8") as f:
+              rel = json.load(f)
+
+          ipa_name = os.environ["IPA_NAME"]
+          assets = rel.get("assets", [])
+          asset = next((a for a in assets if a.get("name") == ipa_name), None)
+          if not asset:
+              asset = next((a for a in assets if a.get("name", "").endswith(".ipa")), None)
+          if not asset:
+              raise RuntimeError("No .ipa asset found in published GitHub release")
+
+          with open("release_body.md", "w", encoding="utf-8") as bf:
+              bf.write(rel.get("body") or "")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"download_url={asset['browser_download_url']}\n")
+              out.write(f"size={asset['size']}\n")
+              out.write(f"published_at={rel['published_at']}\n")
+              out.write(f"release_url={rel['html_url']}\n")
+          PY
+
+      - name: Update SideStore & AltStore apps.json on altstore branch
+        env:
+          IPA_NAME: ${{ needs.build-ipa.outputs.ipa_name }}
+          DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
+          IPA_SIZE: ${{ steps.release.outputs.size }}
+          PUBLISHED_AT: ${{ steps.release.outputs.published_at }}
+          RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
+        run: |
+          ALTSTORE_DIR="$(mktemp -d)"
+          if git ls-remote --exit-code --heads origin altstore >/dev/null 2>&1; then
+            git fetch --depth=1 origin altstore
+            git worktree add --detach "$ALTSTORE_DIR" FETCH_HEAD
+          else
+            git worktree add --detach "$ALTSTORE_DIR" HEAD
+            git -C "$ALTSTORE_DIR" checkout --orphan altstore
+            git -C "$ALTSTORE_DIR" rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          EXISTING_ARG=""
+          if [ -f "${ALTSTORE_DIR}/apps.json" ]; then
+            EXISTING_ARG="${ALTSTORE_DIR}/apps.json"
+          fi
+
+          python3 .github/workflows/supporting/fork/update_sidestore_source.py \
+            --template .github/workflows/supporting/fork/apps.json \
+            --existing "$EXISTING_ARG" \
+            --ipa "$IPA_NAME" \
+            --download-url "$DOWNLOAD_URL" \
+            --size "$IPA_SIZE" \
+            --date "$PUBLISHED_AT" \
+            --notes-file release_body.md \
+            --output "${ALTSTORE_DIR}/apps.json"
+
+          python3 -m json.tool "${ALTSTORE_DIR}/apps.json" >/dev/null
+
+          git -C "$ALTSTORE_DIR" config user.name "github-actions[bot]"
+          git -C "$ALTSTORE_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$ALTSTORE_DIR" add apps.json
+          if ! git -C "$ALTSTORE_DIR" diff --cached --quiet; then
+            git -C "$ALTSTORE_DIR" commit -m "chore: update SideStore/AltStore source for ${RELEASE_TAG}"
+            git -C "$ALTSTORE_DIR" push origin HEAD:refs/heads/altstore
+          else
+            echo "No changes to apps.json"
+          fi
+
+      - name: Write workflow summary
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
+          RELEASE_URL: ${{ steps.release.outputs.release_url }}
+          DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
+        run: |
+          {
+            echo "## Kodoku Release Published (${RELEASE_TAG})"
+            echo "- **GitHub Release**: ${RELEASE_URL}"
+            echo "- **IPA Asset**: ${DOWNLOAD_URL}"
+            echo "- **SideStore / AltStore Source URL**: \`https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/altstore/apps.json\`"
+          } >> "$GITHUB_STEP_SUMMARY"
