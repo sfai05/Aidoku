@@ -154,10 +154,17 @@ import Testing
             knownTitles: ["Frieren: Beyond Journey's End", "葬送のフリーレン"],
             isNovel: false
         )
-        #expect(frierenOptions.count == 1)
-        #expect(frierenOptions.first?.languageCode == "zh")
-        #expect(frierenOptions.first?.text == "中文简介正文。\n在打倒了魔王之后。")
-        #expect(frierenOptions.first?.sourceName == "Bangumi")
+        #expect(frierenOptions.count == 2)
+        #expect(frierenOptions.contains(TrackerDescriptionOption(
+            languageCode: "zh",
+            text: "中文简介正文。\n在打倒了魔王之后。",
+            sourceName: "Bangumi"
+        )))
+        #expect(frierenOptions.contains(TrackerDescriptionOption(
+            languageCode: "zh-Hant",
+            text: "中文簡介正文。\n在打倒了魔王之後。",
+            sourceName: "Bangumi"
+        )))
 
         let grandBlueOptions = MetadataEnrichmentService.parseBangumiDescriptions(
             data: Data(json.utf8),
@@ -166,6 +173,140 @@ import Testing
         )
         #expect(grandBlueOptions.count == 1)
         #expect(grandBlueOptions.first?.languageCode == "ja")
+        #expect(!grandBlueOptions.contains { $0.languageCode == "zh-Hant" })
+    }
+
+    @Test func convertsBangumiSimplifiedChineseToTraditionalAndPreservesSourcePriority() throws {
+        let converted = MetadataEnrichmentService.convertSimplifiedToTraditional(
+            "后宫、头发、皇后、面条、里面、图书馆"
+        )
+        #expect(converted == "後宮、頭髮、皇后、麵條、裡面、圖書館")
+
+        let asciiJson = """
+        {
+          "data": [
+            {
+              "name": "Test Series",
+              "name_cn": "Test Series",
+              "platform": "漫画",
+              "series": true,
+              "summary": "English only summary"
+            }
+          ]
+        }
+        """
+        let asciiOptions = MetadataEnrichmentService.parseBangumiDescriptions(
+            data: Data(asciiJson.utf8),
+            knownTitles: ["Test Series"],
+            isNovel: false
+        )
+        #expect(asciiOptions.count == 1)
+        #expect(asciiOptions.first?.languageCode == "zh")
+
+        let bangumiOnlyJson = """
+        {
+          "data": [
+            {
+              "name": "葬送のフリーレン",
+              "platform": "漫画",
+              "series": true,
+              "summary": "勇者一行人回到王都之后。"
+            }
+          ]
+        }
+        """
+        let bangumiOptions = MetadataEnrichmentService.parseBangumiDescriptions(
+            data: Data(bangumiOnlyJson.utf8),
+            knownTitles: ["葬送のフリーレン"],
+            isNovel: false
+        )
+        let preferredFromBangumi = TitleLanguagePriorityStore.resolvePreferredDescription(
+            from: bangumiOptions,
+            priorityOrder: ["zh-Hant", "zh", "en"]
+        )
+        #expect(preferredFromBangumi?.languageCode == "zh-Hant")
+        #expect(preferredFromBangumi?.text == "勇者一行人回到王都之後。")
+        #expect(preferredFromBangumi?.sourceName == "Bangumi")
+
+        let nativeDex = TrackerDescriptionOption(
+            languageCode: "zh-Hant",
+            text: "MangaDex 原生繁中簡介。",
+            sourceName: "MangaDex"
+        )
+        let combined = bangumiOptions + [nativeDex]
+        let preferredWithNative = TitleLanguagePriorityStore.resolvePreferredDescription(
+            from: combined,
+            priorityOrder: ["zh-Hant", "zh", "en"]
+        )
+        #expect(preferredWithNative == nativeDex)
+
+        let quickWithNative = TitleLanguagePriorityStore.quickDescriptionOptions(
+            from: combined,
+            priorityOrder: ["zh-Hant", "zh", "en"],
+            limit: 4
+        )
+        #expect(quickWithNative.first(where: { $0.languageCode == "zh-Hant" }) == nativeDex)
+
+        let mbOption = TrackerDescriptionOption(languageCode: "en", text: "MB EN", sourceName: "MangaBaka")
+        let sorted = TitleLanguagePriorityStore.sortDescriptionOptions(
+            combined + [mbOption],
+            priorityOrder: ["zh-Hant", "zh", "en"]
+        )
+        #expect(sorted.map { "\($0.languageCode):\($0.sourceName)" } == [
+            "zh-Hant:MangaDex",
+            "zh-Hant:Bangumi",
+            "zh:Bangumi",
+            "en:MangaBaka"
+        ])
+
+        // Already-Traditional Bangumi summary still yields zh-Hant so zh-Hant-only priority matches it.
+        let tradBangumiJson = """
+        {
+          "data": [
+            {
+              "name": "傳統簡介漫畫",
+              "platform": "漫画",
+              "series": true,
+              "summary": "繁體中文劇情。"
+            }
+          ]
+        }
+        """
+        let tradOptions = MetadataEnrichmentService.parseBangumiDescriptions(
+            data: Data(tradBangumiJson.utf8),
+            knownTitles: ["傳統簡介漫畫"],
+            isNovel: false
+        )
+        #expect(TitleLanguagePriorityStore.resolvePreferredDescription(
+            from: tradOptions,
+            priorityOrder: ["zh-Hant", "en"]
+        )?.languageCode == "zh-Hant")
+
+        // When Bangumi converted zh-Hant matches MangaDex native zh-Hant text verbatim, MangaDex wins dedupe.
+        let seriesJson = """
+        {
+          "status": 200,
+          "data": {
+            "id": 1995,
+            "title": "Test",
+            "cover": { "raw": { "url": null } },
+            "status": "releasing",
+            "type": "manga"
+          }
+        }
+        """
+        let series = try #require(
+            try JSONDecoder().decode(MangaBakaResponse<MangaBakaSeries>.self, from: Data(seriesJson.utf8)).data
+        )
+        let sameDex = TrackerDescriptionOption(languageCode: "zh-Hant", text: "共同繁中簡介。", sourceName: "MangaDex")
+        let sameBangumi = TrackerDescriptionOption(languageCode: "zh-Hant", text: "共同繁中簡介。", sourceName: "Bangumi")
+        let mapped = MangaBakaMetadataProvider.map(
+            series: series,
+            trackId: "1995",
+            externalDescriptions: [sameDex, sameBangumi]
+        )
+        let hantOptions = mapped.descriptionOptions.filter { $0.languageCode == "zh-Hant" }
+        #expect(hantOptions == [sameDex])
     }
 
     @Test func titleLanguagePriorityStoreResolvesAndRanksLocalizedDescriptions() {
@@ -326,9 +467,12 @@ struct MetadataEnrichmentNetworkTests {
         }
 
         let descriptions = await service.fetchLocalizedDescriptions(for: series)
-        #expect(descriptions.count == 3)
+        #expect(descriptions.count == 4)
         #expect(descriptions.contains { $0.sourceName == "MangaDex" && $0.languageCode == "zh-Hant" })
         #expect(descriptions.contains { $0.sourceName == "Bangumi" && $0.languageCode == "zh" })
+        #expect(descriptions.contains {
+            $0.sourceName == "Bangumi" && $0.languageCode == "zh-Hant" && $0.text == "中文簡介"
+        })
 
         // Verify graceful degradation on HTTP 429 / 500 and malformed JSON.
         EnrichmentURLProtocolStub.handler = { request in

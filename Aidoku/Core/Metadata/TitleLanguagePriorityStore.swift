@@ -237,6 +237,43 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
         )
     }
 
+    /// Returns the ranking weight for description sources (`MangaBaka > MangaDex > Bangumi`).
+    static func descriptionSourcePriorityScore(_ sourceName: String) -> Int {
+        switch sourceName.lowercased() {
+            case "mangabaka": 30
+            case "mangadex": 20
+            case "bangumi": 10
+            default: 0
+        }
+    }
+
+    /// Sorts description options by `priorityOrder`, then language code, then source priority (`MangaBaka > MangaDex > Bangumi`), then text.
+    static func sortDescriptionOptions(
+        _ options: [TrackerDescriptionOption],
+        priorityOrder: [String]
+    ) -> [TrackerDescriptionOption] {
+        let priorityMap = Dictionary(
+            normalizeList(priorityOrder).enumerated().map { ($0.element.lowercased(), $0.offset) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return options.sorted { lhs, rhs in
+            let lRank = priorityMap[lhs.languageCode.lowercased()] ?? Int.max
+            let rRank = priorityMap[rhs.languageCode.lowercased()] ?? Int.max
+            if lRank != rRank { return lRank < rRank }
+            if lhs.languageCode != rhs.languageCode {
+                return lhs.languageCode.localizedCaseInsensitiveCompare(rhs.languageCode) == .orderedAscending
+            }
+            let lScore = descriptionSourcePriorityScore(lhs.sourceName)
+            let rScore = descriptionSourcePriorityScore(rhs.sourceName)
+            if lScore != rScore { return lScore > rScore }
+            let sourceOrder = lhs.sourceName.localizedCaseInsensitiveCompare(rhs.sourceName)
+            if sourceOrder != .orderedSame {
+                return sourceOrder == .orderedAscending
+            }
+            return lhs.text < rhs.text
+        }
+    }
+
     private static func preferredOption<Option>(
         from options: [Option],
         priorityOrder: [String],
@@ -304,16 +341,7 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
 
     private static func bestDescriptionCandidate(in candidates: [TrackerDescriptionOption]) -> TrackerDescriptionOption? {
         candidates.max { lhs, rhs in
-            sourcePriorityScore(lhs.sourceName) < sourcePriorityScore(rhs.sourceName)
-        }
-    }
-
-    private static func sourcePriorityScore(_ sourceName: String) -> Int {
-        switch sourceName.lowercased() {
-            case "mangabaka": 30
-            case "mangadex": 20
-            case "bangumi": 10
-            default: 0
+            descriptionSourcePriorityScore(lhs.sourceName) < descriptionSourcePriorityScore(rhs.sourceName)
         }
     }
 
