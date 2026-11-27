@@ -93,6 +93,8 @@ extension CoreDataManager {
         object.mangaId = mangaId.mangaKey
         object.title = title
         object.chapterOffset = Int16(chapterOffset)
+        // Fork: Record track creation for PocketBase sync
+        SyncTombstoneStore.shared.recordTrackUpsert(trackerId: trackerId, mangaId: mangaId)
         return object
     }
 
@@ -108,6 +110,8 @@ extension CoreDataManager {
             context: context
         ) else { return }
         object.chapterOffset = Int16(chapterOffset)
+        // Fork: Record track update for PocketBase sync
+        SyncTombstoneStore.shared.recordTrackUpsert(trackerId: trackerId, mangaId: mangaId)
     }
 
     /// Removes a track item.
@@ -118,13 +122,22 @@ extension CoreDataManager {
             context: context
         ) else { return }
         context.delete(object)
+        // Fork: Record track deletion tombstone for PocketBase sync
+        SyncTombstoneStore.shared.recordTrackDeletion(trackerId: trackerId, mangaId: mangaId)
     }
 
     /// Removes all track items for a tracker.
     func removeTracks(trackerId: String, context: NSManagedObjectContext) {
-        let request = TrackObject.fetchRequest()
-        request.predicate = NSPredicate(format: "trackerId == %@", trackerId)
-        queueClear(request: request, context: context)
+        // Fork: Record track deletion tombstones for PocketBase sync
+        for track in getTracks(trackerId: trackerId, context: context) {
+            if let sourceId = track.sourceId, let mangaId = track.mangaId {
+                SyncTombstoneStore.shared.recordTrackDeletion(
+                    trackerId: trackerId,
+                    mangaId: MangaIdentifier(sourceKey: sourceId, mangaKey: mangaId)
+                )
+            }
+            context.delete(track)
+        }
     }
 
     func removeTracks(mangaId: MangaIdentifier, context: NSManagedObjectContext) {

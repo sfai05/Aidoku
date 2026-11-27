@@ -63,6 +63,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillEnterForeground(_ scene: UIScene) {
         contentHideView.removeFromSuperview()
+        // Fork: Pull latest remote sync state on foreground
+        SyncEngine.shared.handleSceneWillEnterForeground()
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -73,6 +75,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if AppSettings.general.incognitoMode.get() {
             (scene as? UIWindowScene)?.windows.first?.addSubview(contentHideView)
         }
+        // Fork: Flush pending sync changes when entering background
+        SyncEngine.shared.handleSceneDidEnterBackground()
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {

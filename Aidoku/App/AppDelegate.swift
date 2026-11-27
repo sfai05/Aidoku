@@ -158,6 +158,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // makes the main thread win the race deterministically.
         _ = CoreDataManager.shared
 
+        // Fork: Start PocketBase sync lifecycle observers
+        SyncEngine.shared.start()
+
         // check for icloud availability
         // https://developer.apple.com/documentation/foundation/filemanager/url(forubiquitycontaineridentifier:)
         // Do not call this method from your app’s main thread. Because this method might take a nontrivial amount of
