@@ -1,0 +1,44 @@
+name: Fork SwiftLint
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fork-lint.yml"
+      - ".swiftlint.yml"
+      - "**/*.swift"
+  workflow_dispatch:
+
+concurrency:
+  group: fork-lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: SwiftLint (Ubuntu)
+    runs-on: ubuntu-latest
+    env:
+      # Keep in sync with SwiftLintPlugins in Package.resolved (0.63.3)
+      SWIFTLINT_IMAGE: "ghcr.io/realm/swiftlint:0.63.3@sha256:b70b763c949399cc3e4fdcfbc7588944d9503d498b6d96e853dfa07a944256e6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify SwiftLint and SourceKit rules
+        run: |
+          set -euo pipefail
+          docker run --rm "${SWIFTLINT_IMAGE}" version
+          OUTPUT="$(printf '//bad\nlet x = 1.0\n' | docker run --rm -i \
+            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:ro" \
+            -w "${GITHUB_WORKSPACE}" \
+            "${SWIFTLINT_IMAGE}" lint --use-stdin --no-cache --config .swiftlint.yml --reporter xcode 2>&1 || true)"
+          grep -q "(comment_whitespace)" <<< "${OUTPUT}"
+          grep -q "(point_zero)" <<< "${OUTPUT}"
+
+      - name: Run SwiftLint
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:ro" \
+            -w "${GITHUB_WORKSPACE}" \
+            "${SWIFTLINT_IMAGE}" lint --no-cache --reporter github-actions-logging
