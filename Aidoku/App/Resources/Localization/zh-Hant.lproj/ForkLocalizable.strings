@@ -233,3 +233,32 @@
 "METADATA_COVERS_MAIN_LABEL" = "主封面";
 "METADATA_COVERS_VOL_FORMAT" = "第 %@ 卷";
 "METADATA_COVERS_VOL_BACK_FORMAT" = "第 %@ 卷（封底）";
+
+/* MangaBaka Authentication & Tracking */
+"MANGABAKA_AUTH_SHEET_TITLE" = "MangaBaka 登入設定";
+"MANGABAKA_AUTH_DONE" = "完成";
+"MANGABAKA_AUTH_API_KEY_BADGE" = "API 金鑰";
+"MANGABAKA_AUTH_STATUS_SECTION" = "目前狀態";
+"MANGABAKA_AUTH_STATUS_LABEL" = "登入方式";
+"MANGABAKA_AUTH_METHOD_API_KEY" = "API 金鑰 (PAT)";
+"MANGABAKA_AUTH_METHOD_OAUTH" = "OAuth";
+"MANGABAKA_AUTH_METHOD_SIGNED_OUT" = "尚未登入";
+"MANGABAKA_AUTH_ACCOUNT_LABEL" = "帳號";
+"MANGABAKA_AUTH_OAUTH_EXPIRED_HINT" = "OAuth 工作階段已過期。改用個人存取權杖（PAT）可穩定維持 1 年有效，且不會影響現有的漫畫追蹤綁定。";
+"MANGABAKA_AUTH_PAT_SECTION" = "個人存取權杖 (推薦)";
+"MANGABAKA_AUTH_PAT_PLACEHOLDER" = "mb-...";
+"MANGABAKA_AUTH_PAT_VERIFY_SAVE" = "驗證並儲存 API 金鑰";
+"MANGABAKA_AUTH_PAT_OPEN_DEV" = "開啟 MangaBaka 開發者設定";
+"MANGABAKA_AUTH_PAT_FOOTER" = "可於 MangaBaka 建立有效期 1 年的個人存取權杖（mb-...）。金鑰僅安全儲存於 iOS Keychain，不會寫入備份或同步，切換也不會清除現有的漫畫追蹤連結。";
+"MANGABAKA_AUTH_PAT_SUCCESS_FORMAT" = "已驗證帳號：%@，API 金鑰已儲存。";
+"MANGABAKA_AUTH_PAT_SCOPE_WARNING_FORMAT" = "注意：此權杖可能缺少權限：%@，書庫同步需要 library.read 與 library.write。";
+"MANGABAKA_AUTH_OAUTH_SECTION" = "OAuth 登入";
+"MANGABAKA_AUTH_OAUTH_SIGN_IN" = "使用 OAuth 登入";
+"MANGABAKA_AUTH_OAUTH_REFRESH" = "重新以 OAuth 登入";
+"MANGABAKA_AUTH_OAUTH_FOOTER" = "於瀏覽器重新完成 OAuth 登入，並保留現有的漫畫追蹤連結。";
+"MANGABAKA_AUTH_LOGOUT_BUTTON" = "登出 MangaBaka";
+"MANGABAKA_AUTH_LOGOUT_CONFIRM_TITLE" = "確定登出 MangaBaka？";
+"MANGABAKA_AUTH_ERROR_INVALID_FORMAT" = "無法驗證 API 金鑰：%@";
+"MANGABAKA_AUTH_PAT_REPLACE_PLACEHOLDER" = "輸入新 API 金鑰以替換（mb-...）";
+"MANGABAKA_AUTH_PAT_REMOVE" = "移除已儲存的 API 金鑰";
+"MANGABAKA_AUTH_PAT_REMOVED" = "已移除儲存的 API 金鑰，已連結的追蹤紀錄仍保留。";

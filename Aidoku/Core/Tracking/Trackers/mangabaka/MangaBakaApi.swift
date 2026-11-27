@@ -18,70 +18,199 @@ actor MangaBakaApi {
         challengeMethod: .s256
     )
 
+    private let session: URLSession
+    nonisolated let authStore: MangaBakaAuthStore
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var inFlightRefreshTask: Task<OAuthResponse?, Never>?
 
-    private func refreshAccessToken() async -> OAuthResponse? {
-        guard let refreshToken = await oauth.tokens?.refreshToken else { return nil }
-
-        guard let url = URL(string: oauth.baseUrl + "/token") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = [
-            "client_id": oauth.clientId,
-            "refresh_token": refreshToken,
-            "grant_type": "refresh_token",
-            "redirect_uri": "aidoku://mangabaka-auth"
-        ].percentEncoded()
-        let response: OAuthResponse? = try? await URLSession.shared.object(from: request)
-        await oauth.setTokens(response)
-        return response
+    init(
+        session: URLSession = .shared,
+        authStore: MangaBakaAuthStore = .shared
+    ) {
+        self.session = session
+        self.authStore = authStore
     }
 
-    private func requestData(urlRequest: URLRequest) async throws -> Data {
-        var (data, response) = try await URLSession.shared.data(for: urlRequest)
-        let statusCode = (response as? HTTPURLResponse)?.statusCode
+    private struct ErrorPayload: Decodable {
+        let message: String?
+        let issues: [MangaBakaIssue]?
+    }
 
-        if await oauth.tokens == nil {
-            await oauth.loadTokens()
+    private func authorizedRequest(for url: URL) async -> URLRequest {
+        if let apiKey = authStore.apiKey {
+            var request = URLRequest(url: url)
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            return request
+        }
+        return await oauth.authorizedRequest(for: url)
+    }
+
+    private static func bearerToken(from request: URLRequest) -> String? {
+        guard let header = request.value(forHTTPHeaderField: "Authorization") else {
+            return nil
+        }
+        let parts = header.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        return parts.count == 2 ? String(parts[1]) : header
+    }
+
+    // Fork: Coalesce OAuth token refreshes, preserve stored tokens on transient errors, and encode form params strictly
+    private func refreshAccessToken(failedAccessToken: String? = nil) async -> OAuthResponse? {
+        if let existingTask = inFlightRefreshTask {
+            return await existingTask.value
         }
 
-        let tokenExpired = await oauth.tokens?.expired == true
+        if let failedAccessToken {
+            if await oauth.tokens == nil {
+                await oauth.loadTokens()
+            }
+            if
+                let currentTokens = await oauth.tokens,
+                let currentAccess = currentTokens.accessToken,
+                !currentAccess.isEmpty,
+                currentAccess != failedAccessToken
+            {
+                return currentTokens
+            }
+        }
 
-        // check if token expired
-        if statusCode == 400 || statusCode == 401 || statusCode == 403 || tokenExpired {
-            // ensure we have a refresh token, otherwise we need to fully re-auth
-            let reloginNeeded = await oauth.checkIfReloginNeeded(trackerName: "MangaBaka")
-            guard !reloginNeeded else {
-                return data
+        let task = Task<OAuthResponse?, Never> { [self] in
+            if await oauth.tokens == nil {
+                await oauth.loadTokens()
+            }
+            let existingTokens = await oauth.tokens
+            guard let refreshToken = existingTokens?.refreshToken, !refreshToken.isEmpty else {
+                return nil
+            }
+            guard let url = URL(string: oauth.baseUrl + "/token") else {
+                return nil
             }
 
-            // refresh access token
-            if await refreshAccessToken() != nil {
-                // try request again with refreshed token
-                let newAuthorization = await oauth.authorizedRequest(for: URL(string: oauth.baseUrl + "/token")!)
-                    .value(forHTTPHeaderField: "Authorization")
-                if let newAuthorization {
-                    var newRequest = urlRequest
-                    newRequest.setValue(newAuthorization, forHTTPHeaderField: "Authorization")
-                    (data, _) = try await URLSession.shared.data(for: newRequest)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = MangaBakaAuthHelpers.formURLEncoded([
+                "client_id": oauth.clientId,
+                "refresh_token": refreshToken,
+                "grant_type": "refresh_token",
+                "redirect_uri": "aidoku://mangabaka-auth"
+            ])
+
+            guard let (data, response) = try? await session.data(for: request) else {
+                return nil
+            }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode
+            guard statusCode == 200 else {
+                if statusCode == 400 || statusCode == 401 {
+                    await oauth.showReloginAlert(trackerName: "MangaBaka")
+                }
+                return nil
+            }
+            guard
+                var refreshed = try? decoder.decode(OAuthResponse.self, from: data),
+                let accessToken = refreshed.accessToken,
+                !accessToken.isEmpty
+            else {
+                return nil
+            }
+            if refreshed.refreshToken == nil {
+                refreshed.refreshToken = refreshToken
+            }
+            refreshed.askedForRefresh = false
+            await oauth.setTokens(refreshed)
+            UserDefaults.standard.set(accessToken, forKey: "Tracker.\(oauth.id).token")
+            return refreshed
+        }
+
+        inFlightRefreshTask = task
+        let result = await task.value
+        inFlightRefreshTask = nil
+        return result
+    }
+
+    private func requestResponse(urlRequest: URLRequest, requiresAuth: Bool = true) async throws -> (Data, Int?) {
+        var effectiveRequest = urlRequest
+        if requiresAuth, !authStore.hasApiKey {
+            if await oauth.tokens == nil {
+                await oauth.loadTokens()
+            }
+            if
+                let tokens = await oauth.tokens,
+                !tokens.askedForRefresh,
+                let expiresIn = tokens.expiresIn,
+                expiresIn > 0,
+                tokens.expired
+            {
+                let reloginNeeded = await oauth.checkIfReloginNeeded(trackerName: "MangaBaka")
+                if
+                    !reloginNeeded,
+                    let refreshed = await refreshAccessToken(failedAccessToken: tokens.accessToken),
+                    let accessToken = refreshed.accessToken
+                {
+                    let tokenType = refreshed.tokenType ?? "Bearer"
+                    effectiveRequest.setValue("\(tokenType) \(accessToken)", forHTTPHeaderField: "Authorization")
                 }
             }
         }
 
-        return data
+        var (data, response) = try await session.data(for: effectiveRequest)
+        var statusCode = (response as? HTTPURLResponse)?.statusCode
+
+        guard requiresAuth, !authStore.hasApiKey else {
+            return (data, statusCode)
+        }
+
+        if statusCode == 401 {
+            let reloginNeeded = await oauth.checkIfReloginNeeded(trackerName: "MangaBaka")
+            let alreadyAsked = await oauth.tokens?.askedForRefresh == true
+            guard !reloginNeeded, !alreadyAsked else {
+                return (data, statusCode)
+            }
+
+            var failedToken = Self.bearerToken(from: effectiveRequest)
+            if failedToken == nil {
+                failedToken = await oauth.tokens?.accessToken
+            }
+            if
+                let refreshed = await refreshAccessToken(failedAccessToken: failedToken),
+                let accessToken = refreshed.accessToken
+            {
+                let tokenType = refreshed.tokenType ?? "Bearer"
+                var retryRequest = effectiveRequest
+                retryRequest.setValue("\(tokenType) \(accessToken)", forHTTPHeaderField: "Authorization")
+                let retry = try await session.data(for: retryRequest)
+                data = retry.0
+                statusCode = (retry.1 as? HTTPURLResponse)?.statusCode
+            }
+        }
+
+        return (data, statusCode)
     }
 
-    private func requestData(url: URL) async throws -> Data {
-        try await requestData(urlRequest: oauth.authorizedRequest(for: url))
+    private func extractErrorMessage(from data: Data) -> String? {
+        guard let payload = try? decoder.decode(ErrorPayload.self, from: data) else {
+            return nil
+        }
+        return payload.message ?? payload.issues?.first?.message
     }
 
-    private func object<T: Decodable>(from url: URL) async throws -> T {
-        try decoder.decode(T.self, from: try await requestData(url: url))
+    private func object<T: Decodable>(from url: URL, requiresAuth: Bool = false) async throws -> T {
+        let request = requiresAuth ? await authorizedRequest(for: url) : URLRequest(url: url)
+        return try await object(from: request, requiresAuth: requiresAuth)
     }
 
-    private func object<T: Decodable>(from request: URLRequest) async throws -> T {
-        try decoder.decode(T.self, from: try await requestData(urlRequest: request))
+    private func object<T: Decodable>(from request: URLRequest, requiresAuth: Bool = true) async throws -> T {
+        let (data, statusCode) = try await requestResponse(urlRequest: request, requiresAuth: requiresAuth)
+        if statusCode == 404 {
+            throw MangaBakaApiError.notFound
+        }
+        if statusCode == 401 || statusCode == 403 {
+            throw MangaBakaApiError.unauthorized(message: extractErrorMessage(from: data))
+        }
+        if let statusCode, !(200...299).contains(statusCode) {
+            throw MangaBakaApiError.apiError(message: extractErrorMessage(from: data) ?? "HTTP \(statusCode)")
+        }
+        return try decoder.decode(T.self, from: data)
     }
 }
 
@@ -106,7 +235,7 @@ extension MangaBakaApi {
         guard let url = components.url else {
             throw MangaBakaApiError.invalidURL
         }
-        let results: MangaBakaResponse<[MangaBakaSeries]> = try await object(from: url)
+        let results: MangaBakaResponse<[MangaBakaSeries]> = try await object(from: url, requiresAuth: false)
         if let data = results.data {
             return data
         } else {
@@ -118,7 +247,7 @@ extension MangaBakaApi {
         guard let url = URL(string: "./v1/series/\(id)", relativeTo: baseApiUrl) else {
             throw MangaBakaApiError.invalidURL
         }
-        let results: MangaBakaResponse<MangaBakaSeries> = try await object(from: url)
+        let results: MangaBakaResponse<MangaBakaSeries> = try await object(from: url, requiresAuth: false)
         if let data = results.data {
             return data
         } else {
@@ -130,7 +259,7 @@ extension MangaBakaApi {
         guard let url = URL(string: "./v1/my/library/\(seriesId)", relativeTo: baseApiUrl) else {
             throw MangaBakaApiError.invalidURL
         }
-        let results: MangaBakaResponse<MangaBakaLibraryEntry> = try await object(from: url)
+        let results: MangaBakaResponse<MangaBakaLibraryEntry> = try await object(from: url, requiresAuth: true)
         if let data = results.data {
             return data
         } else {
@@ -139,6 +268,7 @@ extension MangaBakaApi {
     }
 
     func getLibraryEntries(seriesIds: [Int]) async throws -> [MangaBakaLibraryEntry] {
+        guard !seriesIds.isEmpty else { return [] }
         guard
             let url = URL(string: "./v1/my/library/batch", relativeTo: baseApiUrl),
             var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
@@ -149,8 +279,8 @@ extension MangaBakaApi {
         guard let url = components.url else {
             throw MangaBakaApiError.invalidURL
         }
-        let request = await oauth.authorizedRequest(for: url)
-        let results: MangaBakaResponse<[MangaBakaLibraryEntry]> = try await object(from: request)
+        let request = await authorizedRequest(for: url)
+        let results: MangaBakaResponse<[MangaBakaLibraryEntry]> = try await object(from: request, requiresAuth: true)
         if let data = results.data {
             return data
         } else {
@@ -162,16 +292,42 @@ extension MangaBakaApi {
         guard let url = URL(string: "./v1/my/library/\(seriesId)", relativeTo: baseApiUrl) else {
             throw MangaBakaApiError.invalidURL
         }
-        var request = await oauth.authorizedRequest(for: url)
+        var request = await authorizedRequest(for: url)
         request.httpMethod = create ? "POST" : "PATCH"
         request.httpBody = try? encoder.encode(data)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        _ = try await requestData(urlRequest: request)
+        let (responseData, statusCode) = try await requestResponse(urlRequest: request, requiresAuth: true)
+        if statusCode == 404 && !create {
+            throw MangaBakaApiError.notFound
+        }
+        if statusCode == 401 || statusCode == 403 {
+            throw MangaBakaApiError.unauthorized(message: extractErrorMessage(from: responseData))
+        }
+        if let statusCode, !(200...299).contains(statusCode) {
+            throw MangaBakaApiError.apiError(message: extractErrorMessage(from: responseData) ?? "HTTP \(statusCode)")
+        }
     }
 }
 
-// MARK: - Fork: Series cover gallery endpoint
+// MARK: - Fork: Personal Access Token & Cover gallery endpoints
 extension MangaBakaApi {
+    func verifyApiKey(_ rawKey: String, timeout: TimeInterval = 10) async throws -> MangaBakaProfile {
+        let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw MangaBakaApiError.unauthorized(message: nil)
+        }
+        guard let url = URL(string: "./v1/my/profile", relativeTo: baseApiUrl) else {
+            throw MangaBakaApiError.invalidURL
+        }
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.setValue(trimmed, forHTTPHeaderField: "x-api-key")
+        let result: MangaBakaResponse<MangaBakaProfile> = try await object(from: request, requiresAuth: false)
+        if let data = result.data {
+            return data
+        }
+        throw MangaBakaApiError.apiError(message: result.message ?? "Unknown error")
+    }
+
     static func buildSeriesImagesURL(
         baseApiUrl: URL,
         id: Int,
@@ -221,9 +377,9 @@ extension MangaBakaApi {
             type: type,
             language: language
         )
-        var request = await oauth.authorizedRequest(for: url)
+        var request = URLRequest(url: url)
         request.timeoutInterval = timeout
-        let results: MangaBakaImagesResponse = try await object(from: request)
+        let results: MangaBakaImagesResponse = try await object(from: request, requiresAuth: false)
         if let data = results.data {
             return MangaBakaSeriesImagesResult(
                 images: data,
@@ -237,8 +393,25 @@ extension MangaBakaApi {
     }
 }
 
-enum MangaBakaApiError: Error {
+enum MangaBakaApiError: LocalizedError, Equatable {
     case invalidURL
+    case notFound
+    case unauthorized(message: String?)
     case apiError(message: String)
     case todo
+
+    var errorDescription: String? {
+        switch self {
+            case .invalidURL:
+                "Invalid MangaBaka URL."
+            case .notFound:
+                "Requested MangaBaka resource was not found."
+            case let .unauthorized(message):
+                message ?? "MangaBaka authentication failed or expired."
+            case let .apiError(message):
+                message
+            case .todo:
+                "Not implemented."
+        }
+    }
 }

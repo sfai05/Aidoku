@@ -14,28 +14,62 @@ final class MangaBakaTracker: OAuthTracker {
     let name = "MangaBaka"
     let icon = PlatformImage(named: "mangabaka")
 
-    let api = MangaBakaApi()
+    let api: MangaBakaApi
 
     let callbackHost = "mangabaka-auth"
     var oauthClient: OAuthClient { api.oauth }
+    var authStore: MangaBakaAuthStore { api.authStore }
+    var isUsingApiKey: Bool { authStore.hasApiKey }
 
-    private let dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    var isLoggedIn: Bool {
+        authStore.hasApiKey || token != nil
+    }
+
+    init(api: MangaBakaApi = MangaBakaApi()) {
+        self.api = api
+    }
 
     func getTrackerInfo() -> TrackerInfo {
         .init(supportedStatuses: TrackStatus.defaultStatuses, scoreType: .hundredPoint)
+    }
+
+    func saveApiKey(_ rawKey: String) async throws -> MangaBakaProfile {
+        let profile = try await api.verifyApiKey(rawKey)
+        try authStore.saveApiKey(rawKey)
+        authStore.cachedUsername = profile.displayName
+        // Clear any stale OAuth relogin badge while keeping local Core Data tracks untouched.
+        await api.oauth.loadTokens()
+        if var existing = await api.oauth.tokens, existing.askedForRefresh {
+            existing.askedForRefresh = false
+            await api.oauth.setTokens(existing)
+        }
+        return profile
+    }
+
+    func removeApiKey() {
+        authStore.clearApiKey()
+    }
+
+    func logout() async {
+        authStore.clearApiKey()
+        token = nil
+        await api.oauth.setTokens(nil)
+        UserDefaults.standard.removeObject(forKey: "Tracker.\(id).oauth")
+        UserDefaults.standard.removeObject(forKey: "Tracker.\(id).token")
     }
 
     func register(trackId: String, highestChapterRead: Float?, earliestReadDate: Date?) async throws -> String? {
         guard let id = Int(trackId) else {
             throw MangaBakaTrackerError.invalidId
         }
-        // set status to reading if status doesn't already exist
-        let entry = try? await api.getLibraryEntry(seriesId: id)
-        if entry == nil {
+        // Set status to reading if an entry doesn't already exist on MangaBaka; rethrow auth/network errors.
+        do {
+            _ = try await api.getLibraryEntry(seriesId: id)
+        } catch MangaBakaApiError.notFound {
             try await api.updateLibraryEntry(seriesId: id, create: true, data: .init(
                 state: highestChapterRead != nil ? .reading : .planToRead,
-                progressChapter: highestChapterRead.flatMap { Int(floor($0)) },
-                startDate: earliestReadDate?.dateString(format: dateFormat)
+                progressChapter: highestChapterRead.map(MangaBakaAuthHelpers.normalizeChapterNumber),
+                startDate: earliestReadDate.map { MangaBakaAuthHelpers.formatDate($0) }
             ))
         }
         return nil
@@ -46,16 +80,20 @@ final class MangaBakaTracker: OAuthTracker {
             throw MangaBakaTrackerError.invalidId
         }
         let data = MangaBakaLibraryEntry(
-            id: nil,
-            seriesId: nil,
             state: update.status.flatMap(MangaBakaLibraryState.init),
-            rating: update.score,
-            progressChapter: update.lastReadChapter.flatMap { Int(floor($0)) },
-            progressVolume: update.lastReadVolume,
-            startDate: update.startReadDate?.dateString(format: dateFormat),
-            finishDate: update.finishReadDate?.dateString(format: dateFormat)
+            rating: update.score.map(Double.init),
+            progressChapter: update.lastReadChapter.map(MangaBakaAuthHelpers.normalizeChapterNumber),
+            progressVolume: update.lastReadVolume.map(Double.init),
+            startDate: update.startReadDate.map { MangaBakaAuthHelpers.formatDate($0) },
+            finishDate: update.finishReadDate.map { MangaBakaAuthHelpers.formatDate($0) }
         )
-        try await api.updateLibraryEntry(seriesId: id, data: data)
+        do {
+            try await api.updateLibraryEntry(seriesId: id, create: false, data: data)
+        } catch MangaBakaApiError.notFound {
+            var createData = data
+            createData.state = data.state ?? .reading
+            try await api.updateLibraryEntry(seriesId: id, create: true, data: createData)
+        }
     }
 
     func getState(trackId: String) async throws -> TrackState {
@@ -63,16 +101,21 @@ final class MangaBakaTracker: OAuthTracker {
             throw MangaBakaTrackerError.invalidId
         }
         let series = try await api.getSeries(id: id)
-        let libraryEntry = try await api.getLibraryEntry(seriesId: id)
+        let libraryEntry: MangaBakaLibraryEntry?
+        do {
+            libraryEntry = try await api.getLibraryEntry(seriesId: id)
+        } catch MangaBakaApiError.notFound {
+            libraryEntry = nil
+        }
         return TrackState(
-            score: libraryEntry.rating,
-            status: libraryEntry.state?.into(),
-            lastReadChapter: libraryEntry.progressChapter.flatMap(Float.init),
-            lastReadVolume: libraryEntry.progressVolume,
-            totalChapters: series.status == .releasing ? nil : series.totalChapters.flatMap(Int.init),
-            totalVolumes: series.status == .releasing ? nil : series.finalVolume.flatMap(Int.init),
-            startReadDate: libraryEntry.startDate?.date(format: dateFormat),
-            finishReadDate: libraryEntry.finishDate?.date(format: dateFormat)
+            score: libraryEntry?.rating.map { Int($0.rounded()) },
+            status: libraryEntry?.state?.into(),
+            lastReadChapter: libraryEntry?.progressChapter.map(Float.init),
+            lastReadVolume: libraryEntry?.progressVolume.map { Int(floor($0)) },
+            totalChapters: series.status == .releasing ? nil : MangaBakaAuthHelpers.parseTotalCount(series.totalChapters),
+            totalVolumes: series.status == .releasing ? nil : MangaBakaAuthHelpers.parseTotalCount(series.finalVolume),
+            startReadDate: libraryEntry?.startDate.flatMap { MangaBakaAuthHelpers.parseDate($0) },
+            finishReadDate: libraryEntry?.finishDate.flatMap { MangaBakaAuthHelpers.parseDate($0) }
         )
     }
 
@@ -123,6 +166,9 @@ final class MangaBakaTracker: OAuthTracker {
             }
             token = oauth.accessToken
             UserDefaults.standard.set(try? JSONEncoder().encode(oauth), forKey: "Tracker.\(id).oauth")
+            await api.oauth.setTokens(oauth)
+            // Switching back to OAuth clears any API Key while preserving existing local tracks.
+            authStore.clearApiKey()
         }
     }
 }

@@ -24,6 +24,8 @@ struct SettingsTrackingView: View {
     @State private var showLogoutAlert = false
     // Fork: Live summary of local title language priority order
     @State private var titleLanguageSummary = TitleLanguagePriorityStore.shared.summaryText
+    // Fork: MangaBaka PAT / OAuth auth sheet
+    @State private var showMangaBakaAuthSheet = false
 
     private let iconSize: CGFloat = 42
     private let iconCornerRadius: CGFloat = 42 * 0.225
@@ -77,9 +79,14 @@ struct SettingsTrackingView: View {
             Section(NSLocalizedString("TRACKERS")) {
                 ForEach(trackers.indices, id: \.self) { index in
                     let tracker = trackers[index]
-                    let needsRelogin = trackersNeedingRelogin.contains(tracker.id)
+                    // Fork: Open the dedicated MangaBaka PAT / OAuth management sheet and display API Key status.
+                    let isMangaBaka = tracker.id == TrackerManager.mangabaka.id
+                    let isMangaBakaApiKey = isMangaBaka && TrackerManager.mangabaka.isUsingApiKey
+                    let needsRelogin = !isMangaBakaApiKey && trackersNeedingRelogin.contains(tracker.id)
                     Button {
-                        if tracker.isLoggedIn && !needsRelogin {
+                        if isMangaBaka {
+                            showMangaBakaAuthSheet = true
+                        } else if tracker.isLoggedIn && !needsRelogin {
                             logoutTrackerName = tracker.name
                             showLogoutAlert = true
                         } else {
@@ -112,13 +119,20 @@ struct SettingsTrackingView: View {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.yellow)
                             } else if tracker.isLoggedIn {
+                                // Fork: Show API Key badge when MangaBaka uses Personal Access Token auth.
+                                if isMangaBakaApiKey {
+                                    Text(ForkL10n.string("MANGABAKA_AUTH_API_KEY_BADGE"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.tint)
                             }
                         }
                     }
                     .contextMenu {
-                        if tracker.isLoggedIn {
+                        // Fork: OAuth re-login menu does not apply to stateless Personal Access Tokens.
+                        if tracker.isLoggedIn && !isMangaBakaApiKey {
                             Button {
                                 Task {
                                     await login(to: tracker)
@@ -206,8 +220,48 @@ struct SettingsTrackingView: View {
         .onReceive(NotificationCenter.default.publisher(for: .forkTitleLanguagePriorityChanged)) { _ in
             titleLanguageSummary = TitleLanguagePriorityStore.shared.summaryText
         }
+        // Fork: Manage MangaBaka Personal Access Token & OAuth authentication
+        .sheet(isPresented: $showMangaBakaAuthSheet) {
+            MangaBakaAuthSettingsView(
+                initialOAuthExpired: trackersNeedingRelogin.contains(TrackerManager.mangabaka.id),
+                onAuthChanged: {
+                    let mb = TrackerManager.mangabaka
+                    if let index = trackers.firstIndex(where: { $0.id == mb.id }) {
+                        trackers[index] = mb
+                    }
+                    trackersNeedingRelogin.remove(mb.id)
+                    NotificationCenter.default.post(name: .updateTrackers, object: nil)
+                },
+                onOAuthLogin: {
+                    showMangaBakaAuthSheet = false
+                    Task {
+                        await login(to: TrackerManager.mangabaka)
+                    }
+                },
+                onLogout: {
+                    let mb = TrackerManager.mangabaka
+                    await mb.logout()
+                    if let index = trackers.firstIndex(where: { $0.id == mb.id }) {
+                        trackers[index] = mb
+                    }
+                    trackersNeedingRelogin.remove(mb.id)
+                    NotificationCenter.default.post(name: .updateTrackers, object: nil)
+                    await CoreDataManager.shared.container.performBackgroundTask { @Sendable context in
+                        CoreDataManager.shared.removeTracks(trackerId: mb.id, context: context)
+                        try? context.save()
+                    }
+                }
+            )
+        }
         .task {
             guard !loadedData else { return }
+
+            // Fork: Check MangaBaka OAuth relogin flag when not using PAT
+            await TrackerManager.mangabaka.api.oauth.loadTokens()
+            let mbNeedsRelogin = await TrackerManager.mangabaka.api.oauth.tokens?.askedForRefresh == true
+            if !TrackerManager.mangabaka.isUsingApiKey && mbNeedsRelogin {
+                trackersNeedingRelogin.insert(TrackerManager.mangabaka.id)
+            }
 
             for tracker in trackers {
                 guard let oauthTracker = tracker as? OAuthTracker else { return }
