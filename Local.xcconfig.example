@@ -1,7 +1,10 @@
 // Copy this file to Local.xcconfig (gitignored) to customize signing and bundle ID locally
 // without modifying tracked Xcode project files.
 //
-// Applies to the Aidoku target via Aidoku/Aidoku.xcconfig.
+// Set DEVELOPMENT_TEAM here rather than in Xcode's Signing & Capabilities UI
+// (changing it in the Xcode UI writes to project.pbxproj and overrides xcconfig).
+// Note: Applies to the Aidoku target only; AidokuTests uses project-level settings
+// (iOS Simulator tests sign ad-hoc without a team; physical-device tests require DEVELOPMENT_TEAM).
 //
 // DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
 // APP_ID_PREFIX    = com.yourname

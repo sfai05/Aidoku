@@ -16,7 +16,7 @@ DEVELOPMENT_TEAM            =
 
 // Store build
 // Dev / sideload build (leave flag 'CANONICAL_BUILD' undefined)
-// OTHER_SWIFT_FLAGS = $(inherited) -DCANONICAL_BUILD
+OTHER_SWIFT_FLAGS = $(inherited) -DCANONICAL_BUILD
 
 // Fork: Optional untracked local overrides (kept at repo root outside Aidoku/ synchronized group).
 #include? "../Local.xcconfig"
