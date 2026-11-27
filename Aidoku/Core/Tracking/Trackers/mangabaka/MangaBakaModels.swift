@@ -119,6 +119,144 @@ struct MangaBakaTitle: Decodable, Equatable, Sendable {
     }
 }
 
+struct FlexibleStringID: Decodable, Equatable, Sendable {
+    let value: String
+
+    var intValue: Int? {
+        Int(value)
+    }
+
+    init(_ value: String) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let intVal = try? container.decode(Int.self) {
+            self.value = String(intVal)
+        } else if let strVal = try? container.decode(String.self) {
+            self.value = strVal
+        } else if let doubleVal = try? container.decode(Double.self) {
+            if doubleVal.rounded() == doubleVal {
+                self.value = String(Int(doubleVal))
+            } else {
+                self.value = String(doubleVal)
+            }
+        } else {
+            throw DecodingError.typeMismatch(
+                String.self,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Expected String or Int identifier"
+                )
+            )
+        }
+    }
+}
+
+struct MangaBakaPagination: Decodable, Equatable, Sendable {
+    let count: Int?
+    let page: Int?
+    let limit: Int?
+    let next: String?
+}
+
+struct MangaBakaImageVariant: Decodable, Equatable, Sendable {
+    let x1: String?
+    let x2: String?
+    let x3: String?
+}
+
+struct MangaBakaSeriesImage: Decodable, Equatable, Sendable {
+    let id: Int
+    let index: String?
+    let indexNumeric: Double?
+    let type: String?
+    let language: String?
+    let note: String?
+    let image: ImageSet
+
+    struct ImageSet: Decodable, Equatable, Sendable {
+        let raw: MangaBakaSeries.Cover.Raw
+        let x250: MangaBakaImageVariant?
+        let x350: MangaBakaImageVariant?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case index
+        case indexNumeric = "index_numeric"
+        case type
+        case language
+        case note
+        case image
+    }
+
+    init(
+        id: Int,
+        index: String?,
+        indexNumeric: Double?,
+        type: String?,
+        language: String?,
+        note: String?,
+        image: ImageSet
+    ) {
+        self.id = id
+        self.index = index
+        self.indexNumeric = indexNumeric
+        self.type = type
+        self.language = language
+        self.note = note
+        self.image = image
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.index = (try? container.decodeIfPresent(FlexibleStringID.self, forKey: .index))?.value
+        self.indexNumeric = try? container.decodeIfPresent(Double.self, forKey: .indexNumeric)
+        self.type = try? container.decodeIfPresent(String.self, forKey: .type)
+        self.language = try? container.decodeIfPresent(String.self, forKey: .language)
+        self.note = try? container.decodeIfPresent(String.self, forKey: .note)
+        self.image = try container.decode(ImageSet.self, forKey: .image)
+    }
+}
+
+struct MangaBakaImagesResponse: Decodable, Sendable {
+    let status: Int
+    let message: String?
+    let data: [MangaBakaSeriesImage]?
+    let pagination: MangaBakaPagination?
+    let availableLanguages: [String]?
+    let availableTypes: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case message
+        case data
+        case pagination
+        case availableLanguages = "available_languages"
+        case availableTypes = "available_types"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.status = try container.decode(Int.self, forKey: .status)
+        self.message = try? container.decodeIfPresent(String.self, forKey: .message)
+        self.data = (try? container.decodeIfPresent(LossyDecodableArray<MangaBakaSeriesImage>.self, forKey: .data))?.elements
+        self.pagination = try? container.decodeIfPresent(MangaBakaPagination.self, forKey: .pagination)
+        self.availableLanguages = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .availableLanguages))?.elements
+        self.availableTypes = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .availableTypes))?.elements
+    }
+}
+
+struct MangaBakaSeriesImagesResult: Equatable, Sendable {
+    let images: [MangaBakaSeriesImage]
+    let pagination: MangaBakaPagination?
+    let availableLanguages: [String]
+    let availableTypes: [String]
+}
+
 struct MangaBakaSeries: Decodable, Sendable {
     let id: Int
     let title: String
@@ -138,12 +276,51 @@ struct MangaBakaSeries: Decodable, Sendable {
     let authors: [String]?
     let artists: [String]?
     let genres: [String]?
+    let source: SourceLinks?
 
-    struct Cover: Decodable, Sendable {
-        struct Raw: Decodable, Sendable {
+    struct Cover: Decodable, Equatable, Sendable {
+        struct Raw: Decodable, Equatable, Sendable {
             let url: String?
         }
         let raw: Raw
+    }
+
+    struct SourceLinks: Decodable, Equatable, Sendable {
+        struct Entry: Decodable, Equatable, Sendable {
+            let id: FlexibleStringID?
+        }
+
+        let anilist: Entry?
+        let myAnimeList: Entry?
+        let kitsu: Entry?
+        let mangaUpdates: Entry?
+
+        enum CodingKeys: String, CodingKey {
+            case anilist
+            case myAnimeList = "my_anime_list"
+            case kitsu
+            case mangaUpdates = "manga_updates"
+        }
+
+        init(
+            anilist: Entry? = nil,
+            myAnimeList: Entry? = nil,
+            kitsu: Entry? = nil,
+            mangaUpdates: Entry? = nil
+        ) {
+            self.anilist = anilist
+            self.myAnimeList = myAnimeList
+            self.kitsu = kitsu
+            self.mangaUpdates = mangaUpdates
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.anilist = try? container.decodeIfPresent(Entry.self, forKey: .anilist)
+            self.myAnimeList = try? container.decodeIfPresent(Entry.self, forKey: .myAnimeList)
+            self.kitsu = try? container.decodeIfPresent(Entry.self, forKey: .kitsu)
+            self.mangaUpdates = try? container.decodeIfPresent(Entry.self, forKey: .mangaUpdates)
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -162,6 +339,7 @@ struct MangaBakaSeries: Decodable, Sendable {
         case authors
         case artists
         case genres
+        case source
     }
 
     // Fork: Leniently decode extended metadata fields so unexpected API payloads never break tracker search/sync
@@ -183,6 +361,7 @@ struct MangaBakaSeries: Decodable, Sendable {
         self.authors = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .authors))?.elements
         self.artists = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .artists))?.elements
         self.genres = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .genres))?.elements
+        self.source = try? container.decodeIfPresent(SourceLinks.self, forKey: .source)
     }
 }
 

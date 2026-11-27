@@ -42,7 +42,7 @@ final class EditMetadataViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     let languagePriorityStore: TitleLanguagePriorityStore
-    private let metadataProvider: TrackerMetadataProvider
+    let metadataProvider: TrackerMetadataProvider
     private var baselineSnapshot: MangaMetadataSnapshot
     private var cancellables = Set<AnyCancellable>()
     private var hasLoaded = false
@@ -282,7 +282,8 @@ final class EditMetadataViewModel: ObservableObject {
                         markEdited(.title)
                     }
                 case .cover:
-                    if let remoteCover = metadata.coverUrl, MangaMetadataService.isValidRemoteCoverURL(remoteCover) {
+                    let resolvedCover = selection.selectedCoverUrl ?? metadata.coverUrl
+                    if let remoteCover = resolvedCover, MangaMetadataService.isValidRemoteCoverURL(remoteCover) {
                         pendingCoverImage = nil
                         coverUrl = remoteCover
                         coverUrlInput = remoteCover
@@ -290,10 +291,10 @@ final class EditMetadataViewModel: ObservableObject {
                         markEdited(.cover)
                     }
                 case .authors:
-                    authorsText = MangaMetadataService.formatPersonList(metadata.authors)
+                    authorsText = MangaMetadataService.formatPersonList(selection.selectedAuthors ?? metadata.authors)
                     markEdited(.authors)
                 case .artists:
-                    artistsText = MangaMetadataService.formatPersonList(metadata.artists)
+                    artistsText = MangaMetadataService.formatPersonList(selection.selectedArtists ?? metadata.artists)
                     markEdited(.artists)
                 case .status:
                     if let pulledStatus = metadata.status {
@@ -301,7 +302,7 @@ final class EditMetadataViewModel: ObservableObject {
                         markEdited(.status)
                     }
                 case .description:
-                    descriptionText = metadata.description ?? ""
+                    descriptionText = (selection.selectedDescription ?? metadata.description) ?? ""
                     markEdited(.description)
                 case .tags:
                     tags = metadata.tags

@@ -102,7 +102,10 @@ struct EditMetadataView: View {
                     source: viewModel.source,
                     currentDraft: viewModel.currentSnapshot,
                     metadata: metadata,
-                    languagePriorityStore: viewModel.languagePriorityStore,
+                    dependencies: .init(
+                        languagePriorityStore: viewModel.languagePriorityStore,
+                        metadataProvider: viewModel.metadataProvider
+                    ),
                     onApply: { selection in
                         viewModel.applyPulledSelection(selection, from: metadata)
                     }

@@ -10,7 +10,8 @@
 | **Cross-Device Sync** | `NSPersistentCloudKitContainer` (iCloud / CloudKit) | **PocketBase Sync Engine** (`SyncStorageProvider` + `SyncEnvelope` gzip snapshots with `revision` optimistic locking, SHA-256 verification, tombstones, and non-destructive background smart merge) |
 | **Sync Triggers & Battery** | Black-box iOS CloudKit & APNs scheduling | 60s default change debounce (configurable 5–120s), automatic foreground pull, lock-screen / background `UIBackgroundTask` flush, and disk flush on termination |
 | **Sync UI & Recovery** | Single iCloud Sync toggle | Dedicated **Settings → PocketBase Sync** dashboard (Green/Yellow/Red indicator, counts, setup wizard using transient Superuser credentials or manual `docs/sync/pb_schema.json` import, Keychain-only `users` auth, Sync Logs viewer, Force Sync/Push/Pull, historical snapshot rollback, cleanup, and cursor reset) |
-| **Upstream Isolation** | Core codebase + `Localizable.strings` | New sync engine & UI live in `Aidoku/Core/Sync/` and `Aidoku/Features/Settings/Sync/` with separate `ForkLocalizable.strings` (`en` / `zh-Hant`), `ForkSync.` defaults keys, and zero edits to `Aidoku.xcdatamodeld` or `project.pbxproj` |
+| **Metadata Editing & MangaBaka Pull** | Basic cover customization & source refresh locks | In-app **Edit Metadata** editor (`...` menu for bookmarked & local manga covering Cover, Title, Authors, Artists, Status, Description, Tags + per-field source reset) and **MangaBaka Pull** diff sheet (tracked-gated, multi-language title & description picking from MangaBaka + MangaDex/Bangumi, original-language author/artist names via AniList, browsable all-covers volume gallery picker via MangaBaka `/images`, local-only `Title Language Priority`, and PocketBase per-field `EditedKeys` sync preservation) |
+| **Upstream Isolation** | Core codebase + `Localizable.strings` | New fork code lives cleanly in `Aidoku/Core/Sync/`, `Aidoku/Features/Settings/Sync/`, `Aidoku/Core/Metadata/`, and `Aidoku/Features/Manga/Metadata/` with separate `ForkLocalizable.strings` (`en` / `zh-Hant`), `ForkSync.`/`Fork.` defaults keys, isolated fork CI workflows (`fork-release.yml`, Ubuntu-based `fork-lint.yml`), and zero edits to `Aidoku.xcdatamodeld` or `project.pbxproj` |
 
 ### Installing Kodoku (SideStore / AltStore)
 
@@ -22,6 +23,8 @@
 3. To enable cross-device sync, open **Settings → PocketBase Sync**, create the collection with the **One-Time Setup Wizard** (or import `docs/sync/pb_schema.json` in PocketBase Admin UI `/_/`), and sign in with a regular PocketBase **`users`** collection account on each device.
 
 > Note: Sync transfers your library, manga edits, reading history, chapters, categories, tracking links, reading sessions, updates, vocabulary, custom source configs, and source list URLs. Safe app settings are **off by default** (and sensitive keys matching `login`/`password`/`token`/`auth`/`cookie` are stripped even when enabled). External `.aix` sources and offline downloads are installed per device.
+>
+> Note: User-initiated **Pull from MangaBaka** actions query public, unauthenticated third-party endpoints (AniList, MangaDex, and Bangumi) using the tracked series ID or title solely to enrich original-language staff names and localized synopses. No user credentials or personal data are sent.
 
 ---
 

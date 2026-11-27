@@ -170,6 +170,73 @@ extension MangaBakaApi {
     }
 }
 
+// MARK: - Fork: Series cover gallery endpoint
+extension MangaBakaApi {
+    static func buildSeriesImagesURL(
+        baseApiUrl: URL,
+        id: Int,
+        page: Int = 1,
+        limit: Int = 50,
+        type: String? = nil,
+        language: String? = nil
+    ) throws -> URL {
+        guard
+            let base = URL(string: "./v1/series/\(id)/images", relativeTo: baseApiUrl),
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: true)
+        else {
+            throw MangaBakaApiError.invalidURL
+        }
+        let safePage = max(page, 1)
+        let clampedLimit = min(max(limit, 1), 50)
+        var queryItems = [
+            URLQueryItem(name: "page", value: String(safePage)),
+            URLQueryItem(name: "limit", value: String(clampedLimit))
+        ]
+        if let type = type?.trimmingCharacters(in: .whitespacesAndNewlines), !type.isEmpty {
+            queryItems.append(URLQueryItem(name: "type", value: type))
+        }
+        if let language = language?.trimmingCharacters(in: .whitespacesAndNewlines), !language.isEmpty {
+            queryItems.append(URLQueryItem(name: "language", value: language))
+        }
+        components.queryItems = queryItems
+        guard let url = components.url else {
+            throw MangaBakaApiError.invalidURL
+        }
+        return url
+    }
+
+    func getSeriesImages(
+        id: Int,
+        page: Int = 1,
+        limit: Int = 50,
+        type: String? = nil,
+        language: String? = nil,
+        timeout: TimeInterval = 10
+    ) async throws -> MangaBakaSeriesImagesResult {
+        let url = try Self.buildSeriesImagesURL(
+            baseApiUrl: baseApiUrl,
+            id: id,
+            page: page,
+            limit: limit,
+            type: type,
+            language: language
+        )
+        var request = await oauth.authorizedRequest(for: url)
+        request.timeoutInterval = timeout
+        let results: MangaBakaImagesResponse = try await object(from: request)
+        if let data = results.data {
+            return MangaBakaSeriesImagesResult(
+                images: data,
+                pagination: results.pagination,
+                availableLanguages: results.availableLanguages ?? [],
+                availableTypes: results.availableTypes ?? []
+            )
+        } else {
+            throw MangaBakaApiError.apiError(message: results.message ?? "Unknown error")
+        }
+    }
+}
+
 enum MangaBakaApiError: Error {
     case invalidURL
     case apiError(message: String)
