@@ -117,6 +117,21 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
         return ([first] + rest).joined(separator: "-")
     }
 
+    /// Normalizes regional Chinese codes (e.g. `zh-hk`, `zh-tw`, `zh-Hant-TW`, `zh-cn`) into script tags used by the priority store.
+    static func normalizeRegionLanguageCode(_ raw: String) -> String {
+        let trimmed = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: "-")
+        let lowered = trimmed.lowercased()
+        if lowered == "zh-hant" || lowered.hasPrefix("zh-hant-") || ["zh-hk", "zh-tw", "zh-mo"].contains(lowered) {
+            return "zh-Hant"
+        }
+        if lowered == "zh-hans" || lowered.hasPrefix("zh-hans-") || ["zh-cn", "zh-sg"].contains(lowered) {
+            return "zh-Hans"
+        }
+        return normalizeLanguageCode(raw)
+    }
+
     static func shortLabel(for code: String) -> String {
         let normalized = normalizeLanguageCode(code)
         if normalized == "unknown" {
@@ -150,13 +165,13 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
     ) -> TrackerTitleOption? {
         guard !options.isEmpty else { return nil }
 
-        for code in normalizeList(priorityOrder) {
-            let matching = options.filter {
-                $0.languageCode.caseInsensitiveCompare(code) == .orderedSame
-            }
-            if let best = bestCandidate(in: matching) {
-                return best
-            }
+        if let preferred = preferredOption(
+            from: options,
+            priorityOrder: priorityOrder,
+            languageCode: \.languageCode,
+            pickBest: bestCandidate(in:)
+        ) {
+            return preferred
         }
 
         let trimmedDefault = defaultTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,27 +187,95 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
         return options.first(where: \.isPrimary) ?? options.first
     }
 
+    /// Selects the highest-priority description matching `priorityOrder`, falling back to English or the first option.
+    static func resolvePreferredDescription(
+        from options: [TrackerDescriptionOption],
+        priorityOrder: [String]
+    ) -> TrackerDescriptionOption? {
+        guard !options.isEmpty else { return nil }
+
+        if let preferred = preferredOption(
+            from: options,
+            priorityOrder: priorityOrder,
+            languageCode: \.languageCode,
+            pickBest: bestDescriptionCandidate(in:)
+        ) {
+            return preferred
+        }
+
+        let englishMatches = options.filter { $0.languageCode.caseInsensitiveCompare("en") == .orderedSame }
+        return bestDescriptionCandidate(in: englishMatches) ?? options.first
+    }
+
     /// Returns up to `limit` best title options across distinct languages ordered by `priorityOrder` first.
     static func quickLanguageOptions(
         from options: [TrackerTitleOption],
         priorityOrder: [String],
         limit: Int = 4
     ) -> [TrackerTitleOption] {
+        quickDistinctLanguageOptions(
+            from: options,
+            priorityOrder: priorityOrder,
+            limit: limit,
+            languageCode: \.languageCode,
+            pickBest: bestCandidate(in:)
+        )
+    }
+
+    /// Returns up to `limit` best description options across distinct languages ordered by `priorityOrder` first.
+    static func quickDescriptionOptions(
+        from options: [TrackerDescriptionOption],
+        priorityOrder: [String],
+        limit: Int = 4
+    ) -> [TrackerDescriptionOption] {
+        quickDistinctLanguageOptions(
+            from: options,
+            priorityOrder: priorityOrder,
+            limit: limit,
+            languageCode: \.languageCode,
+            pickBest: bestDescriptionCandidate(in:)
+        )
+    }
+
+    private static func preferredOption<Option>(
+        from options: [Option],
+        priorityOrder: [String],
+        languageCode: (Option) -> String,
+        pickBest: ([Option]) -> Option?
+    ) -> Option? {
+        for code in normalizeList(priorityOrder) {
+            let matching = options.filter {
+                languageCode($0).caseInsensitiveCompare(code) == .orderedSame
+            }
+            if let best = pickBest(matching) {
+                return best
+            }
+        }
+        return nil
+    }
+
+    private static func quickDistinctLanguageOptions<Option>(
+        from options: [Option],
+        priorityOrder: [String],
+        limit: Int,
+        languageCode: (Option) -> String,
+        pickBest: ([Option]) -> Option?
+    ) -> [Option] {
         guard !options.isEmpty, limit > 0 else { return [] }
 
-        var bestByLanguage: [String: TrackerTitleOption] = [:]
-        var grouped: [String: [TrackerTitleOption]] = [:]
-
+        var grouped: [String: [Option]] = [:]
         for option in options {
-            grouped[option.languageCode.lowercased(), default: []].append(option)
+            grouped[languageCode(option).lowercased(), default: []].append(option)
         }
+
+        var bestByLanguage: [String: Option] = [:]
         for (key, group) in grouped {
-            if let best = bestCandidate(in: group) {
+            if let best = pickBest(group) {
                 bestByLanguage[key] = best
             }
         }
 
-        var ordered: [TrackerTitleOption] = []
+        var ordered: [Option] = []
         var seenLanguages: Set<String> = []
 
         for code in normalizeList(priorityOrder) {
@@ -217,6 +300,21 @@ final class TitleLanguagePriorityStore: @unchecked Sendable {
         }
 
         return Array(ordered.prefix(limit))
+    }
+
+    private static func bestDescriptionCandidate(in candidates: [TrackerDescriptionOption]) -> TrackerDescriptionOption? {
+        candidates.max { lhs, rhs in
+            sourcePriorityScore(lhs.sourceName) < sourcePriorityScore(rhs.sourceName)
+        }
+    }
+
+    private static func sourcePriorityScore(_ sourceName: String) -> Int {
+        switch sourceName.lowercased() {
+            case "mangabaka": 30
+            case "mangadex": 20
+            case "bangumi": 10
+            default: 0
+        }
     }
 
     private static func normalizeList(_ codes: [String]) -> [String] {

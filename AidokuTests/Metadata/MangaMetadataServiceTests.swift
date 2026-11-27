@@ -309,4 +309,112 @@ private struct MockTrackerMetadataProvider: TrackerMetadataProvider {
             selectedTitle: "Updated Title"
         ))
     }
+
+    @MainActor
+    @Test func editViewModelAppliesEnrichedNativeAuthorsDescriptionAndChosenCover() {
+        let manga = AidokuRunner.Manga(
+            sourceKey: "mangadex",
+            key: "grand-blue",
+            title: "Grand Blue",
+            cover: "https://source.example/old.jpg",
+            artists: ["Kimitake Yoshioka"],
+            authors: ["Kenji Inoue"],
+            description: "Old English synopsis",
+            tags: ["Comedy"],
+            status: .ongoing
+        )
+        let metadata = TrackerMangaMetadata(
+            trackerId: "mangabaka",
+            trackerName: "MangaBaka",
+            trackId: "1264",
+            defaultTitle: "Grand Blue Dreaming",
+            titleOptions: [],
+            coverUrl: "https://images.mangabaka.dev/main.jpg",
+            coverOptions: [
+                .init(
+                    id: "main",
+                    rawUrl: "https://images.mangabaka.dev/main.jpg",
+                    thumbnailUrl: "https://images.mangabaka.dev/main.jpg",
+                    volumeLabel: nil,
+                    type: "main",
+                    languageCode: "unknown",
+                    isMain: true
+                ),
+                .init(
+                    id: "vol2",
+                    rawUrl: "https://images.mangabaka.dev/vol2.jpg",
+                    thumbnailUrl: "https://cdn.mangabaka.dev/vol2-x250.jpg",
+                    volumeLabel: "2",
+                    type: "volume",
+                    languageCode: "ja",
+                    isMain: false
+                )
+            ],
+            totalCoverCount: 2,
+            authors: ["Kenji Inoue"],
+            nativeAuthors: ["井上堅二"],
+            artists: ["Kimitake Yoshioka"],
+            nativeArtists: ["吉岡公威"],
+            status: .ongoing,
+            description: "New English synopsis",
+            descriptionOptions: [
+                .init(languageCode: "en", text: "New English synopsis", sourceName: "MangaBaka"),
+                .init(languageCode: "ja", text: "新しい日本語のあらすじ。", sourceName: "MangaDex")
+            ],
+            tags: ["Comedy"]
+        )
+
+        let viewModel = EditMetadataViewModel(
+            source: nil,
+            manga: manga,
+            metadataProvider: MockTrackerMetadataProvider(result: metadata)
+        )
+        viewModel.applyPulledSelection(
+            TrackerMetadataSelection(
+                selectedFields: [.cover, .authors, .artists, .description],
+                selectedTitle: "Grand Blue",
+                selectedCoverUrl: "https://images.mangabaka.dev/vol2.jpg",
+                selectedAuthors: ["井上堅二"],
+                selectedArtists: ["吉岡公威"],
+                selectedDescription: "新しい日本語のあらすじ。"
+            ),
+            from: metadata
+        )
+
+        #expect(viewModel.coverUrl == "https://images.mangabaka.dev/vol2.jpg")
+        #expect(viewModel.authorsText == "井上堅二")
+        #expect(viewModel.artistsText == "吉岡公威")
+        #expect(viewModel.descriptionText == "新しい日本語のあらすじ。")
+        #expect(viewModel.isFieldEdited(.cover))
+        #expect(viewModel.isFieldEdited(.authors))
+        #expect(viewModel.isFieldEdited(.artists))
+        #expect(viewModel.isFieldEdited(.description))
+    }
+
+    @Test func pullSheetCandidatesEvaluateCustomCoverNativeStaffAndLocalizedDescription() {
+        let draft = MangaMetadataSnapshot(
+            cover: "https://images.mangabaka.dev/main.jpg",
+            title: "Grand Blue",
+            authors: ["Kenji Inoue"],
+            artists: ["Kimitake Yoshioka"],
+            status: .ongoing,
+            description: "Old English synopsis",
+            tags: ["Comedy"],
+            editedKeys: []
+        )
+        let candidates = MangaBakaMetadataPullSheet.PullFieldCandidates(
+            title: "Grand Blue",
+            coverUrl: "https://images.mangabaka.dev/vol5.jpg",
+            authors: ["井上堅二"],
+            artists: ["吉岡公威"],
+            status: .ongoing,
+            description: "中文簡介",
+            tags: ["Comedy"]
+        )
+        let selected = MangaBakaMetadataPullSheet.defaultSelectedFields(
+            currentDraft: draft,
+            candidates: candidates
+        )
+        #expect(selected == [.cover, .authors, .artists, .description])
+    }
 }
