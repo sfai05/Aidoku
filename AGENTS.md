@@ -23,6 +23,7 @@ The primary goals of this fork are:
   - `origin`: `https://github.com/sfai05/Aidoku.git` (your fork)
   - `upstream`: `https://github.com/Aidoku/Aidoku.git` (push **disabled**; fetch/merge only)
   - **NEVER** push commits, file issues, or open pull requests against `Aidoku/Aidoku`. Always verify targets point to `sfai05/Aidoku`.
+  - When using `gh` CLI in this fork, remember `gh pr create` / `gh issue create` default to the parent repository unless configured — always run `gh repo set-default sfai05/Aidoku` and/or pass `--repo sfai05/Aidoku` explicitly.
 - **Branching**:
   - **Never** commit feature, fix, or configuration work directly to `main`.
   - Always branch off `main` using descriptive names: `feat/<topic>`, `fix/<topic>`, `chore/<topic>`, `docs/<topic>`.
@@ -46,7 +47,7 @@ Follow these rules in every task to keep merging `upstream/main` straightforward
    - Both `Aidoku` and `AidokuTests` use Xcode 16 `PBXFileSystemSynchronizedRootGroup` in `Aidoku.xcodeproj/project.pbxproj`, meaning new Swift/test files in these folders are picked up automatically. Avoid unnecessary edits to `project.pbxproj`.
 
 2. **Minimal Upstream Hooks**
-   - Keep modifications to upstream files (`AppDelegate.swift`, `Settings.swift`, `SettingsView.swift`, `CoreDataManager.swift`, `LibraryViewController.swift`, etc.) as thin as possible — ideally 1–5 line delegation hooks wrapped or labeled with `// MARK: - Fork: <brief reason>`.
+   - Keep modifications to upstream files (`AppDelegate.swift`, `Settings.swift`, `SettingsView.swift`, `CoreDataManager.swift`, `LibraryViewController.swift`, etc.) as thin as possible — ideally 1–5 line delegation hooks marked with `// MARK: - Fork: <brief reason>` at type/extension/file scope or `// Fork: <brief reason>` inline inside function bodies.
    - Prefer gating or routing around upstream behavior (e.g., iCloud sync hooks) instead of deleting large blocks of upstream code.
 
 3. **Never Modify Upstream Core Data Schema**
@@ -54,11 +55,11 @@ Follow these rules in every task to keep merging `upstream/main` straightforward
    - Store fork-specific state (`revision`, deletion tombstones, sync logs, secret-category flags, etc.) outside Core Data in dedicated JSON files under `FileManager.default.applicationSupportDirectory`, scoped `UserDefaults` keys, or Keychain.
 
 4. **Separate Localization Tables**
-   - Upstream uses Weblate to continuously update `Aidoku/App/Resources/Localization/*.lproj/Localizable.strings`.
-   - Do **not** scatter fork strings across upstream `Localizable.strings` files. Store fork UI strings in a separate `.strings` table (e.g., `ForkLocalizable.strings`) accessed via a dedicated localization helper.
+   - Upstream crowdsources `Aidoku/App/Resources/Localization/*.lproj/Localizable.strings` via Weblate (per `README.md`) and calls `NSLocalizedString("KEY")` against the default table.
+   - Do **not** scatter fork strings across upstream `Localizable.strings` files. Store fork UI strings in `ForkLocalizable.strings` under `Aidoku/App/Resources/Localization/<lang>.lproj/` (starting with `en.lproj` and `zh-Hant.lproj`) and load them via `NSLocalizedString(..., tableName: "ForkLocalizable", comment: "")` through a small fork helper.
 
 5. **Separate CI Workflows & Minimal Config Diffs**
-   - Add fork-specific CI workflows (e.g., `.github/workflows/fork-release.yml`) instead of rewriting upstream workflows (`nightly.yml`, `update_altstore_source.yml`). Note that upstream's `nightly.yml` targets a custom `xcode-27` runner; fork workflows must target standard GitHub-hosted macOS runners.
+   - Add fork-specific CI workflows (e.g., `.github/workflows/fork-release.yml`) instead of rewriting upstream workflows (`nightly.yml`, `update_altstore_source.yml`). Upstream's `nightly.yml` triggers on `[push, workflow_dispatch]` targeting a custom `xcode-27` runner; disable `nightly.yml` and `update_altstore_source.yml` in the fork's GitHub Actions settings UI rather than modifying or deleting those files, and target standard GitHub-hosted macOS runners in fork workflows.
    - Keep `Aidoku/Aidoku.xcconfig`, `Aidoku/Aidoku.entitlements`, and `Aidoku/Info.plist` diffs minimal and clearly commented.
 
 6. **Code Style (`.swiftlint.yml`)**
@@ -66,25 +67,40 @@ Follow these rules in every task to keep merging `upstream/main` straightforward
      - 4 spaces for indentation (never tabs; enforced by `spaces_not_tabs`).
      - Leading space after `//` in comments (enforced by `comment_whitespace`).
      - No trailing `.0` on float literals (enforced by `point_zero`, e.g., `16`, not `16.0`).
-     - Line length <= 150 warning / 200 error; adhere to all opt-in rules (`implicit_return`, `first_where`, `empty_count`, `sorted_first_last`, etc.).
+     - Line length <= 150 warning / 200 error (ignoring comments and URLs); adhere to all opt-in rules (`implicit_return`, `first_where`, `empty_count`, `sorted_first_last`, etc.).
 
-7. **Security & Secrets**
-   - Store all sync auth tokens, passwords, and session secrets exclusively in **iOS Keychain**.
-   - Never store sensitive credentials in `UserDefaults`, as `BackupManager` exports `UserDefaults` keys matching allowed prefixes (e.g., `General`, `Token`, `Tracker`).
+7. **Security, Secrets & Sync Payload Hygiene**
+   - Aidoku currently has no Keychain helper; implement a small Keychain wrapper under `Aidoku/Core/Sync/` and store all sync auth tokens, passwords, and session secrets exclusively in **iOS Keychain**.
+   - Require all fork-owned `UserDefaults` keys to use a dedicated prefix outside `BackupManager.allowedSettingsPrefixes` (e.g., `ForkSync.` / `Fork.`) so `BackupManager` never exports fork sync config and a Force Pull cannot overwrite local PocketBase server URL or sync state.
+   - When generating automatic sync snapshots via `BackupManager.createBackup`, pass `sensitiveSettings: false` by default (which strips keys matching `login`, `password`, `token`, `auth`, `cookie`) so tracker/source OAuth tokens are not uploaded to remote or third-party PocketBase instances unless explicitly opted in.
    - Any PocketBase Superuser/Admin credentials used in the **One-Time Setup Wizard** must remain strictly transient in memory for schema creation and be discarded immediately afterward — never persisted to Keychain, `UserDefaults`, or logs.
+   - Never log auth tokens, passwords, or `Authorization` headers in `LogManager` or sync logs. Recommend HTTPS for remote/cloud PocketBase instances (self-hosted LAN HTTP remains usable under existing ATS settings).
+
+---
+
+## Verification Commands
+
+- Lint changed Swift files:
+  ```bash
+  swiftlint lint
+  ```
+- Run unit tests (ensure `xcode-select` points to the installed `Xcode.app` rather than only CommandLineTools when invoking from terminal):
+  ```bash
+  xcodebuild test -scheme "Aidoku" -destination 'platform=iOS Simulator,name=iPhone 16'
+  ```
 
 ---
 
 ## Agreed Architecture Decisions
 
 - **Free Apple ID / Sideloading**:
-  - Remove paid-only entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity containers) from `Aidoku.entitlements` and `remote-notification` from `Info.plist` `UIBackgroundModes`.
-  - Keep local notifications (`NotificationManager` / `UNUserNotificationCenter`) and `BGProcessingTask` (`processing`, `fetch`) intact; they do not require APNs.
+  - Remove paid-only entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity containers) from `Aidoku.entitlements`, audit `com.apple.developer.user-fonts` compatibility and leftover `ICLOUD_CONTAINER_ID` / `UBIQUITY_KVSTORE_ID` keys in `Aidoku.xcconfig` and `Info.plist`, and remove `remote-notification` from `Info.plist` `UIBackgroundModes`.
+  - Keep local notifications (`NotificationManager` / `UNUserNotificationCenter`), `BGProcessingTask` (`processing`), and the `fetch` background mode in `Info.plist` intact; they do not require APNs.
   - Publish unsigned `.ipa` builds + SideStore/AltStore-compatible `apps.json` from `sfai05/Aidoku`.
 - **Cross-Device Sync (iPhone + iPad)**:
   - **Storage Abstraction**: Define a thin `SyncStorageProvider` protocol (`healthCheck`, `fetchLatestMetadata`, `downloadSnapshot`, `uploadSnapshot`, `listSnapshots`, `deleteSnapshot`) so PocketBase ships first while allowing future providers (e.g., WebDAV) without rewriting merge logic.
   - **Snapshot + Smart Merge**: Wrap Aidoku's existing `Backup` codable model inside a `SyncEnvelope` (`revision` optimistic lock, `deviceId`, `updatedAt`, lightweight deletion `tombstones`).
-  - **Non-Destructive Merger**: Regular sync runs a quiet background smart merge (newest `dateRead` wins for history, union + tombstone reconciliation for library/categories/tracks/`EditedKeys`). Never invoke destructive `BackupManager.doRestore` (which wipes Core Data stores and presents blocking alerts) during automatic sync; reserve full overwrite strictly for explicit user-triggered **Force Push / Force Pull** recovery actions.
+  - **Non-Destructive Merger**: Regular sync runs a quiet background smart merge (newest `dateRead` wins for history, union + tombstone reconciliation for library/categories/tracks/`EditedKeys`). Never invoke `BackupManager.restore` (or its internal destructive `doRestore` path, which wipes Core Data stores and presents blocking alerts) during automatic sync; reserve full overwrite strictly for explicit user-triggered **Force Push / Force Pull** recovery actions.
   - **PocketBase Auth & Schema**: Authenticate daily sync via PocketBase's standard `users` collection (`auth-with-password` + `auth-refresh`) with owner-scoped API rules (`@request.auth.id != "" && owner = @request.auth.id`). Support both an in-app **One-Time Setup Wizard** (programmatic collection creation using transient Superuser credentials) and **Manual `pb_schema.json` Import** (for least-privilege or shared servers).
 
 ---
@@ -100,5 +116,5 @@ Follow these rules in every task to keep merging `upstream/main` straightforward
 ### Future
 - **#5** — Better manga management: Tracker metadata sync (MangaBaka) and manual metadata editing
 - **#6** — Secret categories locked with Face ID
-- **#7** — Home screen Widgets (sideload & free Apple ID compatible)
+- **#7** — Home screen Widgets (sideload & free Apple ID constraints to validate)
 - **#8** — Better notifications when new chapters are dropped
