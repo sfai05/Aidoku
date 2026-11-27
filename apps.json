@@ -31,6 +31,16 @@
       "versions": [
         {
           "version": "0.9",
+          "buildVersion": "102",
+          "date": "2026-11-27T15:04:40Z",
+          "localizedDescription": "Add PocketBase bidirectional sync core, Sync Status Dashboard, One-Time Setup Wizard, pb_schema.json export, Sync Logs viewer, and experimental recovery tools.",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.102/Kodoku-v0.9-kodoku.102.ipa",
+          "size": 14965574,
+          "minOSVersion": "15.0",
+          "sha256": "091f085b4dce3fd15cb1430f69b08ec629d868b047725335b94e2286c7b7ba48"
+        },
+        {
+          "version": "0.9",
           "buildVersion": "101",
           "date": "2026-11-27T12:20:50Z",
           "localizedDescription": "Initial Kodoku SideStore/AltStore release (free Apple ID compatible, blue Kodoku icon).",
