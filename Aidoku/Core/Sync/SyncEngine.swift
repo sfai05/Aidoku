@@ -272,11 +272,22 @@ actor SyncEngine {
 
     func currentStatus() -> SyncStatusSnapshot {
         let hasPending = tombstoneStore.snapshot().hasPendingChanges
+        var effectiveError = lastErrorMessage
+        if configuration.isEnabled, let pbProvider = provider as? PocketBaseSyncProvider {
+            let trimmedServer = configuration.serverURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if effectiveError == nil {
+                if trimmedServer.isEmpty {
+                    effectiveError = SyncError.notConfigured("PocketBase server URL is missing.").localizedDescription
+                } else if pbProvider.currentSession() == nil {
+                    effectiveError = SyncError.notAuthenticated.localizedDescription
+                }
+            }
+        }
         let indicator: SyncIndicator = if !configuration.isEnabled {
             .disabled
         } else if isSyncing {
             .syncing
-        } else if lastErrorMessage != nil {
+        } else if effectiveError != nil {
             .error
         } else if hasPending {
             .pendingChanges
@@ -290,7 +301,7 @@ actor SyncEngine {
             lastSyncedAt: configuration.lastSyncedAt,
             lastSyncedRevision: configuration.lastSyncedRevision,
             hasPendingChanges: hasPending,
-            lastErrorMessage: lastErrorMessage,
+            lastErrorMessage: effectiveError,
             stats: configuration.lastSyncedStats
         )
     }
@@ -335,6 +346,176 @@ actor SyncEngine {
 
     func listRemoteSnapshots(limit: Int = 20) async throws -> [SyncSnapshotMetadata] {
         try await provider.listSnapshots(limit: limit)
+    }
+}
+
+// MARK: - Settings & Auth Facade
+
+struct SyncServerConfigUpdateResult: Equatable, Sendable {
+    let didResetCursor: Bool
+    let didClearSession: Bool
+}
+
+extension SyncEngine {
+    nonisolated var pocketBaseProvider: PocketBaseSyncProvider? {
+        provider as? PocketBaseSyncProvider
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        configuration.isEnabled = enabled
+        if !enabled {
+            debounceTask?.cancel()
+            debounceTask = nil
+            pendingFollowUpSync = false
+            lastErrorMessage = nil
+        }
+        postStateChanged()
+    }
+
+    func notifyConfigurationChanged() {
+        postStateChanged()
+    }
+
+    @discardableResult
+    func updateServerConfiguration(
+        serverURL: String?,
+        collectionName: String
+    ) async -> SyncServerConfigUpdateResult {
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingFollowUpSync = false
+
+        await acquireExclusiveLock()
+        defer {
+            releaseExclusiveLock()
+            postStateChanged()
+        }
+
+        let currentServer = configuration.serverURL
+        let priorSyncedServer = configuration.lastSyncedServerURL
+        let currentCollection = configuration.collectionName
+        let priorSyncedCollection = configuration.lastSyncedCollectionName
+
+        let serverChanged = (currentServer != nil && currentServer != serverURL)
+            || (priorSyncedServer != nil && priorSyncedServer != serverURL)
+        let collectionChanged = currentCollection != collectionName
+            && (configuration.lastSyncedRevision > 0 || priorSyncedCollection != nil)
+
+        configuration.serverURL = serverURL
+        configuration.collectionName = collectionName
+
+        if serverChanged {
+            try? pocketBaseProvider?.signOut()
+            configuration.isEnabled = false
+            configuration.resetSyncProgress()
+            tombstoneStore.reset()
+            lastErrorMessage = nil
+            await logStore.log(
+                level: .info,
+                category: "auth",
+                message: "Cleared session and reset sync cursor after changing PocketBase server URL."
+            )
+            return SyncServerConfigUpdateResult(didResetCursor: true, didClearSession: true)
+        } else if collectionChanged {
+            configuration.resetSyncProgress()
+            tombstoneStore.reset()
+            lastErrorMessage = nil
+            await logStore.log(
+                level: .info,
+                category: "auth",
+                message: "Reset sync cursor after changing PocketBase collection."
+            )
+            return SyncServerConfigUpdateResult(didResetCursor: true, didClearSession: false)
+        }
+        return SyncServerConfigUpdateResult(didResetCursor: false, didClearSession: false)
+    }
+
+    @discardableResult
+    func signIn(
+        serverURL: String,
+        collectionName: String? = nil,
+        email: String,
+        password: String
+    ) async throws -> PocketBaseAuthSession {
+        guard let pbProvider = pocketBaseProvider else {
+            throw SyncError.notConfigured("PocketBase provider is unavailable.")
+        }
+        let targetCollection: String
+        if let collectionName {
+            let trimmedCollection = collectionName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedCollection = trimmedCollection.isEmpty ? PocketBaseSchema.defaultCollectionName : trimmedCollection
+            guard PocketBaseSchema.isValidCollectionName(resolvedCollection) else {
+                throw SyncError.notConfigured(
+                    "Collection name '\(collectionName)' must start with a letter and use alphanumeric or '_' characters."
+                )
+            }
+            targetCollection = resolvedCollection
+        } else {
+            targetCollection = configuration.collectionName
+        }
+
+        await acquireExclusiveLock()
+        defer {
+            releaseExclusiveLock()
+            postStateChanged()
+        }
+
+        let previousServerURL = configuration.lastSyncedServerURL ?? configuration.serverURL
+        let previousCollection = configuration.lastSyncedCollectionName ?? configuration.collectionName
+        let previousUserId = configuration.lastSyncedUserId ?? pbProvider.currentSession()?.userId
+        let session = try await pbProvider.signIn(serverURL: serverURL, email: email, password: password)
+
+        configuration.collectionName = targetCollection
+
+        let switchedServer = previousServerURL != nil && previousServerURL != configuration.serverURL
+        let switchedCollection = previousCollection != targetCollection
+            && (configuration.lastSyncedRevision > 0 || configuration.lastSyncedCollectionName != nil)
+        let switchedUser = previousUserId != nil && previousUserId != session.userId
+        if switchedServer || switchedCollection || switchedUser {
+            configuration.resetSyncProgress()
+            tombstoneStore.reset()
+            await logStore.log(
+                level: .info,
+                category: "auth",
+                message: "Reset sync cursor after switching PocketBase server, collection, or account."
+            )
+        }
+        recordSyncedAccountIdentity()
+        lastErrorMessage = nil
+        return session
+    }
+
+    func signOut() async {
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingFollowUpSync = false
+
+        await acquireExclusiveLock()
+        defer {
+            releaseExclusiveLock()
+            postStateChanged()
+        }
+
+        try? pocketBaseProvider?.signOut()
+        configuration.isEnabled = false
+        lastErrorMessage = nil
+        await logStore.log(level: .info, category: "auth", message: "Signed out of PocketBase.")
+    }
+
+    func deleteRemoteSnapshot(id: String) async throws {
+        await acquireExclusiveLock()
+        defer { releaseExclusiveLock() }
+
+        try await provider.deleteSnapshot(id: id)
+        await logStore.log(level: .info, category: "cleanup", message: "Deleted remote snapshot \(id).")
+    }
+
+    private func recordSyncedAccountIdentity() {
+        configuration.lastSyncedServerURL = configuration.serverURL
+        configuration.lastSyncedCollectionName = configuration.collectionName
+        if let userId = pocketBaseProvider?.currentSession()?.userId {
+            configuration.lastSyncedUserId = userId
+        }
     }
 }
 
@@ -462,6 +643,7 @@ private extension SyncEngine {
                         : nil
                     configuration.lastSyncedAt = now
                     configuration.lastSyncedStats = stats
+                    recordSyncedAccountIdentity()
                     lastErrorMessage = nil
 
                     await pruneRemoteSnapshotsIfNeeded()
@@ -562,6 +744,7 @@ private extension SyncEngine {
                 : nil
             configuration.lastSyncedAt = now
             configuration.lastSyncedStats = stats
+            recordSyncedAccountIdentity()
             lastErrorMessage = nil
 
             let duration = nowProvider().timeIntervalSince(startDate)
@@ -831,6 +1014,7 @@ private extension SyncEngine {
                 : nil
             configuration.lastSyncedAt = now
             configuration.lastSyncedStats = stats
+            recordSyncedAccountIdentity()
             lastErrorMessage = nil
 
             await logStore.log(
@@ -909,6 +1093,7 @@ private extension SyncEngine {
             : nil
         configuration.lastSyncedAt = now
         configuration.lastSyncedStats = mergeResult.stats
+        recordSyncedAccountIdentity()
         lastErrorMessage = nil
 
         let duration = max(0, nowProvider().timeIntervalSince(startDate))

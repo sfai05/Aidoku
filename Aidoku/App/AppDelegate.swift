@@ -159,6 +159,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ = CoreDataManager.shared
 
         // Fork: Start PocketBase sync lifecycle observers
+        SyncEngine.shared.configuration.ensureDefaultDeviceName()
         SyncEngine.shared.start()
 
         // check for icloud availability

@@ -327,6 +327,9 @@ extension SettingsView {
             InsightsView()
         } else if key == "SourceLists" {
             SourceListsView()
+        } else if key == "Sync" {
+            // Fork: PocketBase Sync dashboard
+            SyncSettingsView().environmentObject(path)
         } else if key == "Backups" {
             BackupsView().environmentObject(path)
         } else if key == "Downloads" {
