@@ -31,6 +31,16 @@
       "versions": [
         {
           "version": "0.9",
+          "buildVersion": "103",
+          "date": "2026-11-27T18:36:12Z",
+          "localizedDescription": "Add manual manga metadata editing (cover, title, authors, artists, status, description, tags), MangaBaka tracker metadata pull with configurable local title language priority, PocketBase per-field metadata sync, and sync UX improvements with 60s default debounce and lock-screen flush.",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.103/Kodoku-v0.9-kodoku.103.ipa",
+          "size": 15166701,
+          "minOSVersion": "15.0",
+          "sha256": "4591b087a72ee7e103abb6fb1867db7ff2662b7d30eeb4a4002632c61b1a8ca1"
+        },
+        {
+          "version": "0.9",
           "buildVersion": "102",
           "date": "2026-11-27T15:04:40Z",
           "localizedDescription": "Add PocketBase bidirectional sync core, Sync Status Dashboard, One-Time Setup Wizard, pb_schema.json export, Sync Logs viewer, and experimental recovery tools.",
