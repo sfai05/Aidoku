@@ -263,3 +263,16 @@
 "MANGABAKA_AUTH_PAT_REPLACE_PLACEHOLDER" = "輸入新 API 金鑰以替換（mb-...）";
 "MANGABAKA_AUTH_PAT_REMOVE" = "移除已儲存的 API 金鑰";
 "MANGABAKA_AUTH_PAT_REMOVED" = "已移除儲存的 API 金鑰，已連結的追蹤紀錄仍保留。";
+
+/* Library Filter & Sort Sheet */
+"LIBRARY_FILTER_SORT_TITLE" = "篩選與排序";
+"LIBRARY_SORT_TAB" = "排序";
+"LIBRARY_FILTER_TAB_COUNT_FORMAT" = "篩選 (%d)";
+"LIBRARY_FILTER_TRISTATE_HINT" = "點一下包含、點兩下排除，再點一下清除條件。";
+"LIBRARY_FILTER_GROUP_ACTIVE_NOTE_FORMAT" = "此處的條件會額外套用在「%@」過濾群組之上。";
+"LIBRARY_SORT_TAP_HINT" = "再次點擊目前排序項目即可切換升／降冪。";
+"LIBRARY_FILTER_STATE_OFF" = "未啟用";
+"LIBRARY_FILTER_STATE_INCLUDED" = "包含";
+"LIBRARY_FILTER_STATE_EXCLUDED" = "排除";
+"LIBRARY_ACTIVE_FILTERS_COUNT_FORMAT" = "已啟用 %d 個";
+"LIBRARY_REMOVE_FILTER_CHIP_A11Y_FORMAT" = "移除 %@ 篩選條件";
