@@ -46,7 +46,8 @@ final class CoreDataManager: @unchecked Sendable {
     private static let historyPurgeInterval: TimeInterval = 60 * 60
 
     private static var shouldUseiCloud: Bool {
-        AppSettings.general.icloudSync.get() && FileManager.default.ubiquityIdentityToken != nil
+        // Fork: CloudKit entitlements are removed for free Apple ID builds; disable CloudKit mirroring.
+        false
     }
 
     private init() {

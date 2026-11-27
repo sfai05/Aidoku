@@ -11,10 +11,12 @@ APP_ID_SUFFIX               = Aidoku
 
 PRODUCT_BUNDLE_IDENTIFIER   = $(APP_ID_PREFIX).$(APP_ID_SUFFIX)
 
-// ----- iCloud / CloudKit -----
-ICLOUD_CONTAINER_ID         = iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)
-UBIQUITY_KVSTORE_ID         = $(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
+// Fork: Clear upstream DEVELOPMENT_TEAM for free Apple ID / Personal Team builds.
+DEVELOPMENT_TEAM            =
 
 // Store build
 // Dev / sideload build (leave flag 'CANONICAL_BUILD' undefined)
-OTHER_SWIFT_FLAGS = $(inherited) -DCANONICAL_BUILD
+// OTHER_SWIFT_FLAGS = $(inherited) -DCANONICAL_BUILD
+
+// Fork: Optional untracked local overrides (kept at repo root outside Aidoku/ synchronized group).
+#include? "../Local.xcconfig"

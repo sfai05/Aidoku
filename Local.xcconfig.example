@@ -1,0 +1,8 @@
+// Copy this file to Local.xcconfig (gitignored) to customize signing and bundle ID locally
+// without modifying tracked Xcode project files.
+//
+// Applies to the Aidoku target via Aidoku/Aidoku.xcconfig.
+//
+// DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
+// APP_ID_PREFIX    = com.yourname
+// APP_ID_SUFFIX    = Aidoku
