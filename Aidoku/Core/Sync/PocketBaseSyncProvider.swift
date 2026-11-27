@@ -10,9 +10,18 @@ protocol SyncHTTPClient: Sendable {
 }
 
 final class URLSessionSyncHTTPClient: SyncHTTPClient {
-    private let session: URLSession
+    let session: URLSession
 
-    init(session: URLSession = .shared) {
+    static func makeDefaultSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config)
+    }
+
+    init(session: URLSession = URLSessionSyncHTTPClient.makeDefaultSession()) {
         self.session = session
     }
 
@@ -38,7 +47,45 @@ struct PocketBaseAuthSession: Equatable, Sendable {
 
 enum PocketBaseProvisionResult: Equatable, Sendable {
     case created(collectionName: String)
-    case alreadyExists(collectionName: String, missingFields: [String])
+    case alreadyExists(collectionName: String, missingFields: [String], configurationIssues: [String])
+}
+
+enum PocketBaseJWTInspector {
+    struct ExpirationInfo: Equatable, Sendable {
+        let issuedAt: Date?
+        let expiresAt: Date
+    }
+
+    private struct Claims: Decodable {
+        let exp: TimeInterval?
+        let iat: TimeInterval?
+    }
+
+    static func expirationInfo(from token: String) -> ExpirationInfo? {
+        let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count == 3 else { return nil }
+
+        var base64 = String(segments[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder != 0 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+
+        guard
+            let payloadData = Data(base64Encoded: base64),
+            let claims = try? JSONDecoder().decode(Claims.self, from: payloadData),
+            let exp = claims.exp
+        else {
+            return nil
+        }
+
+        return ExpirationInfo(
+            issuedAt: claims.iat.map { Date(timeIntervalSince1970: $0) },
+            expiresAt: Date(timeIntervalSince1970: exp)
+        )
+    }
 }
 
 enum PocketBaseDateParser {
@@ -82,17 +129,20 @@ final class PocketBaseSyncProvider: @unchecked Sendable {
     private let keychain: SyncKeychainStoreProtocol
     private let httpClient: SyncHTTPClient
     private let logStore: SyncLogStore
+    private let nowProvider: @Sendable () -> Date
 
     init(
         configuration: SyncConfiguration = SyncConfiguration(),
         keychain: SyncKeychainStoreProtocol = SyncKeychainStore(),
         httpClient: SyncHTTPClient = URLSessionSyncHTTPClient(),
-        logStore: SyncLogStore = .shared
+        logStore: SyncLogStore = .shared,
+        nowProvider: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.configuration = configuration
         self.keychain = keychain
         self.httpClient = httpClient
         self.logStore = logStore
+        self.nowProvider = nowProvider
     }
 
     // MARK: - Auth
@@ -178,7 +228,49 @@ final class PocketBaseSyncProvider: @unchecked Sendable {
         try keychain.writeString(authResponse.record.id, account: SyncKeychainAccount.pocketBaseUserId)
         try keychain.writeString(resolvedEmail, account: SyncKeychainAccount.pocketBaseUserEmail)
 
+        await logStore.log(level: .info, category: "auth", message: "Refreshed PocketBase auth session.")
         return PocketBaseAuthSession(userId: authResponse.record.id, email: resolvedEmail)
+    }
+
+    func refreshSessionIfNeeded() async throws {
+        guard
+            let token = try keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken),
+            !token.isEmpty
+        else {
+            return
+        }
+        guard let info = PocketBaseJWTInspector.expirationInfo(from: token) else {
+            return
+        }
+
+        let now = nowProvider()
+        let shouldRefresh: Bool
+        if now >= info.expiresAt {
+            shouldRefresh = true
+        } else if let issuedAt = info.issuedAt, info.expiresAt > issuedAt {
+            let halfLifetime = info.expiresAt.timeIntervalSince(issuedAt) / 2
+            let midpoint = issuedAt.addingTimeInterval(halfLifetime)
+            shouldRefresh = now >= midpoint || info.expiresAt.timeIntervalSince(now) <= 86_400
+        } else {
+            shouldRefresh = info.expiresAt.timeIntervalSince(now) <= 3 * 86_400
+        }
+
+        guard shouldRefresh else { return }
+
+        do {
+            _ = try await refreshAuth()
+        } catch SyncError.authenticationExpired {
+            throw SyncError.authenticationExpired
+        } catch {
+            if now >= info.expiresAt {
+                throw error
+            }
+            await logStore.log(
+                level: .warning,
+                category: "auth",
+                message: "Proactive session refresh failed while token is still valid: \(error.localizedDescription)"
+            )
+        }
     }
 
     func signOut() throws {
@@ -224,14 +316,18 @@ extension PocketBaseSyncProvider {
         let (existingData, existingResponse) = try await httpClient.data(for: getRequest)
         if existingResponse.statusCode == 200 {
             let collectionInfo = try? JSONDecoder().decode(CollectionInspectResponse.self, from: existingData)
-            let presentFields = Set(collectionInfo?.fields?.map(\.name) ?? [])
-            let missing = PocketBaseSchema.requiredFieldNames.subtracting(presentFields).sorted()
+            let validation = validateExistingCollection(collectionInfo, collectionName: trimmedCollection)
             await logStore.log(
-                level: .info,
+                level: (!validation.missingFields.isEmpty || !validation.issues.isEmpty) ? .warning : .info,
                 category: "setup",
-                message: "PocketBase collection '\(trimmedCollection)' already exists (missing fields: \(missing.count))."
+                message: "PocketBase collection '\(trimmedCollection)' already exists "
+                    + "(missing fields: \(validation.missingFields.count), config issues: \(validation.issues.count))."
             )
-            return .alreadyExists(collectionName: trimmedCollection, missingFields: missing)
+            return .alreadyExists(
+                collectionName: trimmedCollection,
+                missingFields: validation.missingFields,
+                configurationIssues: validation.issues
+            )
         } else if existingResponse.statusCode != 404 {
             throw mapHTTPError(statusCode: existingResponse.statusCode, data: existingData, collectionName: trimmedCollection)
         }
@@ -756,9 +852,65 @@ private extension PocketBaseSyncProvider {
                     return .collectionNotFound(collectionName)
                 }
                 return .serverError(statusCode: statusCode, message: message)
+            case 413:
+                return .serverError(
+                    statusCode: 413,
+                    message: "Sync snapshot exceeds server upload size limit (HTTP 413)."
+                )
             default:
                 return .serverError(statusCode: statusCode, message: message)
         }
+    }
+
+    private func validateExistingCollection(
+        _ info: CollectionInspectResponse?,
+        collectionName: String
+    ) -> (missingFields: [String], issues: [String]) {
+        guard let info else {
+            return (
+                PocketBaseSchema.requiredFieldNames.sorted(),
+                ["Unable to inspect existing collection configuration."]
+            )
+        }
+
+        let presentFields = Set(info.fields?.map(\.name) ?? [])
+        let missing = PocketBaseSchema.requiredFieldNames.subtracting(presentFields).sorted()
+        var issues: [String] = []
+
+        let expected = PocketBaseSchema.collectionPayload(collectionName: collectionName)
+        let normalizeRule: (String?) -> String? = { value in
+            value?.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
+
+        if normalizeRule(info.listRule) != normalizeRule(expected.listRule) {
+            issues.append("listRule does not match owner-scoped access rule.")
+        }
+        if normalizeRule(info.viewRule) != normalizeRule(expected.viewRule) {
+            issues.append("viewRule does not match owner-scoped access rule.")
+        }
+        if normalizeRule(info.createRule) != normalizeRule(expected.createRule) {
+            issues.append("createRule does not enforce owner = @request.auth.id.")
+        }
+        if info.updateRule != nil {
+            issues.append("updateRule should be locked (null) to keep snapshots immutable.")
+        }
+        if normalizeRule(info.deleteRule) != normalizeRule(expected.deleteRule) {
+            issues.append("deleteRule does not match owner-scoped access rule.")
+        }
+
+        if let payloadField = info.fields?.first(where: { $0.name == "payload" }), payloadField.protected != true {
+            issues.append("payload file field should have 'protected: true'.")
+        }
+
+        let hasUniqueRevisionIndex = (info.indexes ?? []).contains { raw in
+            let pattern = #"(?i)create\s+unique\s+index\b.*\(\s*[`"\[]?owner[`"\]]?\s*,\s*[`"\[]?revision[`"\]]?\s*\)"#
+            return raw.range(of: pattern, options: .regularExpression) != nil
+        }
+        if !hasUniqueRevisionIndex {
+            issues.append("Missing UNIQUE INDEX on (owner, revision) for optimistic locking.")
+        }
+
+        return (missing, issues)
     }
 }
 
@@ -786,11 +938,19 @@ private extension PocketBaseSyncProvider {
 
     struct FieldSummary: Decodable {
         let name: String
+        let type: String?
+        let protected: Bool?
     }
 
     struct CollectionInspectResponse: Decodable {
         let id: String?
+        let listRule: String?
+        let viewRule: String?
+        let createRule: String?
+        let updateRule: String?
+        let deleteRule: String?
         let fields: [FieldSummary]?
+        let indexes: [String]?
     }
 
     struct FieldErrorInfo: Decodable {

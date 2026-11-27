@@ -8,6 +8,11 @@ import UIKit
 
 protocol SyncSnapshotSource: Sendable {
     func captureBackup(includeSettings: Bool) async -> Backup
+    func currentSettingsDigest() async -> String?
+}
+
+extension SyncSnapshotSource {
+    func currentSettingsDigest() async -> String? { nil }
 }
 
 protocol SyncSnapshotApplier: Sendable {
@@ -33,6 +38,40 @@ final class BackupManagerSnapshotSource: SyncSnapshotSource {
                 sensitiveSettings: false
             )
         )
+    }
+
+    func currentSettingsDigest() async -> String? {
+        let sourcePrefixes: [String] = await CoreDataManager.shared.container.performBackgroundTask { context in
+            CoreDataManager.shared.getSources(context: context)
+                .compactMap(\.id)
+                .map { "\($0)." }
+        }
+        let allSettings = UserDefaults.standard.dictionaryRepresentation()
+        var converted: [String: JSONAnyValue] = [:]
+        for (key, value) in allSettings {
+            let matchesPrefix = BackupManager.allowedSettingsPrefixes.contains { key.hasPrefix($0) }
+                || sourcePrefixes.contains { key.hasPrefix($0) }
+            guard matchesPrefix, SyncMerger.isAllowedSyncSettingKey(key) else { continue }
+            if let data = value as? Data {
+                converted[key] = .data(data)
+            } else if
+                let number = value as? NSNumber,
+                CFGetTypeID(number) == CFBooleanGetTypeID()
+            {
+                converted[key] = .bool(number.boolValue)
+            } else if let str = value as? String {
+                converted[key] = .string(str)
+            } else if let int = value as? Int {
+                converted[key] = .int(int)
+            } else if let dbl = value as? Double {
+                converted[key] = .double(dbl)
+            } else if let bool = value as? Bool {
+                converted[key] = .bool(bool)
+            } else if let arr = value as? [String] {
+                converted[key] = .array(arr)
+            }
+        }
+        return SyncMerger.settingsDigest(converted)
     }
 }
 
@@ -102,6 +141,7 @@ final class SyncCoreDataApplier: SyncSnapshotApplier {
             Self.mergeReadingSessions(
                 backup.readingSessions ?? [],
                 historyMap: historyMap,
+                tombstones: tombstones,
                 context: context,
                 didChange: &outcome.databaseChanged
             )
@@ -545,7 +585,10 @@ private extension SyncCoreDataApplier {
         let mangaDeletes = Dictionary(tombstones.mangaHistory.map { ($0.mangaIdentifier, $0.deletedAt) }, uniquingKeysWith: max)
 
         for (id, existing) in map where !mergedIds.contains(id) {
-            let deletedAt = maxDate(chapterDeletes[id], mangaDeletes[id.mangaIdentifier])
+            let deletedAt = maxDate(
+                maxDate(chapterDeletes[id], mangaDeletes[id.mangaIdentifier]),
+                tombstones.historyClearedAt
+            )
             if let deletedAt, (existing.dateRead ?? .distantPast) <= deletedAt {
                 context.delete(existing)
                 map.removeValue(forKey: id)
@@ -651,6 +694,7 @@ private extension SyncCoreDataApplier {
     static func mergeReadingSessions(
         _ mergedSessions: [BackupReadingSession],
         historyMap: [ChapterIdentifier: HistoryObject],
+        tombstones: SyncTombstones,
         context: NSManagedObjectContext,
         didChange: inout Bool
     ) {
@@ -661,18 +705,31 @@ private extension SyncCoreDataApplier {
             let pagesRead: Int
         }
 
+        let chapterDeletes = Dictionary(tombstones.history.map { ($0.chapterIdentifier, $0.deletedAt) }, uniquingKeysWith: max)
+        let mangaDeletes = Dictionary(tombstones.mangaHistory.map { ($0.mangaIdentifier, $0.deletedAt) }, uniquingKeysWith: max)
+
         var existingKeys = Set<SessionKey>()
         for object in CoreDataManager.shared.getSessions(context: context) {
             guard
-                let history = object.history,
                 let startDate = object.startDate,
                 let endDate = object.endDate
             else {
                 continue
             }
+            let chapterId = object.history?.identifier
+            let deletedAt = maxDate(
+                maxDate(chapterId.flatMap { chapterDeletes[$0] }, chapterId.flatMap { mangaDeletes[$0.mangaIdentifier] }),
+                tombstones.historyClearedAt
+            )
+            if let deletedAt, endDate <= deletedAt {
+                context.delete(object)
+                didChange = true
+                continue
+            }
+            guard let chapterId else { continue }
             existingKeys.insert(
                 SessionKey(
-                    chapterId: history.identifier,
+                    chapterId: chapterId,
                     startMillis: Int64((startDate.timeIntervalSince1970 * 1000).rounded()),
                     endMillis: Int64((endDate.timeIntervalSince1970 * 1000).rounded()),
                     pagesRead: Int(object.pagesRead)

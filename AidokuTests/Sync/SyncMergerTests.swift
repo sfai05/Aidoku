@@ -572,3 +572,257 @@ import Testing
         #expect(remainingIds == ["fresh"])
     }
 }
+
+@Suite struct SyncMergerTieBreakAndClearTests {
+    @Test func staleDeviceDoesNotOverwriteRemoteChapterFlagsOnEqualLastUpdated() {
+        let m1 = MangaIdentifier(sourceKey: "mangadex", mangaKey: "m1")
+        // Remote device A (rev 3) edited m1.chapterFlags = 7, langFilter, scanlatorFilter with tied lastUpdated.
+        let remoteA = SyncEnvelope(
+            revision: 3,
+            deviceId: "ipad-a",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(3_000),
+            backup: SyncTestFixtures.makeBackup(
+                library: [
+                    SyncTestFixtures.makeLibraryManga(
+                        mangaId: m1.mangaKey,
+                        lastUpdated: SyncTestFixtures.date(1_000)
+                    )
+                ],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: m1.mangaKey,
+                        chapterFlags: 7,
+                        langFilter: "ja",
+                        scanlatorFilter: ["GroupA"]
+                    )
+                ]
+            )
+        )
+
+        // Stale device B (rev 2) later added unrelated m2 (giving B a newer envelope updatedAt = 5_000),
+        // while its copy of m1 still has stale chapterFlags = 0 and equal lastUpdated = 1_000.
+        let staleLocalB = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(5_000),
+            backup: SyncTestFixtures.makeBackup(
+                library: [
+                    SyncTestFixtures.makeLibraryManga(
+                        mangaId: m1.mangaKey,
+                        lastUpdated: SyncTestFixtures.date(1_000)
+                    ),
+                    SyncTestFixtures.makeLibraryManga(
+                        mangaId: "m2",
+                        lastUpdated: SyncTestFixtures.date(5_000)
+                    )
+                ],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: m1.mangaKey,
+                        chapterFlags: 0,
+                        langFilter: nil,
+                        scanlatorFilter: nil
+                    ),
+                    SyncTestFixtures.makeManga(id: "m2", title: "Local Addition")
+                ]
+            )
+        )
+
+        let mergeFromStale = SyncMerger.merge(
+            local: staleLocalB,
+            remote: remoteA,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(6_000)
+        )
+        let mergedM1 = mergeFromStale.mergedEnvelope.backup.manga?.first { $0.id == "m1" }
+        #expect(mergedM1?.chapterFlags == 7)
+        #expect(mergedM1?.langFilter == "ja")
+        #expect(mergedM1?.scanlatorFilter == ["GroupA"])
+        #expect(mergeFromStale.mergedEnvelope.backup.manga?.contains { $0.id == "m2" } == true)
+
+        // When B explicitly edited m1 details later (recorded in mangaDetailsUpdates), B's update wins.
+        var editedLocalB = staleLocalB
+        editedLocalB = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(5_000),
+            tombstones: SyncTombstones(
+                mangaDetailsUpdates: [
+                    SyncMangaCategoryUpdate(mangaId: m1, updatedAt: SyncTestFixtures.date(4_000))
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: staleLocalB.backup.library ?? [],
+                manga: [
+                    SyncTestFixtures.makeManga(id: m1.mangaKey, chapterFlags: 3, langFilter: "en"),
+                    SyncTestFixtures.makeManga(id: "m2", title: "Local Addition")
+                ]
+            )
+        )
+
+        let mergeFromExplicitEdit = SyncMerger.merge(
+            local: editedLocalB,
+            remote: remoteA,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(6_000)
+        )
+        let editedM1 = mergeFromExplicitEdit.mergedEnvelope.backup.manga?.first { $0.id == "m1" }
+        #expect(editedM1?.chapterFlags == 3)
+        #expect(editedM1?.langFilter == "en")
+    }
+
+    @Test func settingsAndSourcesMergeRespectsStaleDeviceAndBreaksTiesSymmetrically() {
+        let localStale = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(5_000),
+            backup: SyncTestFixtures.makeBackup(
+                sources: [SyncTestFixtures.makeSource(id: "komga-1", apiVersion: "1", config: Data([0x01]))],
+                settings: ["Reader.readingMode": .string("ltr")]
+            )
+        )
+        let remoteNewer = SyncEnvelope(
+            revision: 3,
+            deviceId: "ipad-a",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(3_000),
+            backup: SyncTestFixtures.makeBackup(
+                sources: [SyncTestFixtures.makeSource(id: "komga-1", apiVersion: "2", config: Data([0x02]))],
+                settings: ["Reader.readingMode": .string("webtoon")]
+            )
+        )
+
+        // When local settings were not modified, remote wins even if local has a newer envelope timestamp.
+        let untouchedMerge = SyncMerger.merge(
+            local: localStale,
+            remote: remoteNewer,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(6_000),
+            includeSettings: true,
+            localSettingsModified: false
+        )
+        #expect(untouchedMerge.mergedEnvelope.backup.settings?["Reader.readingMode"] == .string("webtoon"))
+        #expect(untouchedMerge.mergedEnvelope.backup.sources?.first?.apiVersion == "2")
+
+        // When local settings were actively edited later, local wins on settings.
+        let editedMerge = SyncMerger.merge(
+            local: localStale,
+            remote: remoteNewer,
+            deviceId: "iphone-b",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(6_000),
+            includeSettings: true,
+            localSettingsModified: true
+        )
+        #expect(editedMerge.mergedEnvelope.backup.settings?["Reader.readingMode"] == .string("ltr"))
+
+        // Merge symmetry with nil localSettingsModified: merge(A, B) matches merge(B, A) payload.
+        let forward = SyncMerger.merge(
+            local: localStale,
+            remote: remoteNewer,
+            deviceId: "d1",
+            deviceName: "D1",
+            now: SyncTestFixtures.date(6_000),
+            includeSettings: true
+        )
+        let reverse = SyncMerger.merge(
+            local: remoteNewer,
+            remote: localStale,
+            deviceId: "d1",
+            deviceName: "D1",
+            now: SyncTestFixtures.date(6_000),
+            includeSettings: true
+        )
+        #expect(forward.mergedEnvelope.backup.settings == reverse.mergedEnvelope.backup.settings)
+        #expect(forward.mergedEnvelope.backup.sources == reverse.mergedEnvelope.backup.sources)
+    }
+
+    @Test func bulkHistoryClearTombstoneSuppressesOlderHistoryAndSessions() {
+        let local = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(4_000),
+            tombstones: SyncTombstones(historyClearedAt: SyncTestFixtures.date(3_000)),
+            backup: SyncTestFixtures.makeBackup(
+                history: [
+                    SyncTestFixtures.makeHistory(
+                        mangaId: "m1",
+                        chapterId: "c-after",
+                        dateRead: SyncTestFixtures.date(3_500),
+                        completed: true
+                    )
+                ],
+                readingSessions: [
+                    SyncTestFixtures.makeSession(
+                        mangaId: "m1",
+                        chapterId: "c-after",
+                        pagesRead: 8,
+                        startDate: SyncTestFixtures.date(3_400),
+                        endDate: SyncTestFixtures.date(3_500)
+                    )
+                ]
+            )
+        )
+
+        let remote = SyncEnvelope(
+            revision: 3,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(2_900),
+            backup: SyncTestFixtures.makeBackup(
+                history: [
+                    SyncTestFixtures.makeHistory(
+                        mangaId: "m1",
+                        chapterId: "c-before",
+                        dateRead: SyncTestFixtures.date(2_500),
+                        completed: true
+                    ),
+                    SyncTestFixtures.makeHistory(
+                        mangaId: "m2",
+                        chapterId: "c-boundary",
+                        dateRead: SyncTestFixtures.date(3_000),
+                        completed: true
+                    )
+                ],
+                readingSessions: [
+                    SyncTestFixtures.makeSession(
+                        mangaId: "m1",
+                        chapterId: "c-before",
+                        pagesRead: 12,
+                        startDate: SyncTestFixtures.date(2_400),
+                        endDate: SyncTestFixtures.date(2_500)
+                    ),
+                    SyncTestFixtures.makeSession(
+                        mangaId: "m2",
+                        chapterId: "c-boundary",
+                        pagesRead: 10,
+                        startDate: SyncTestFixtures.date(2_900),
+                        endDate: SyncTestFixtures.date(3_000)
+                    )
+                ]
+            )
+        )
+
+        let result = SyncMerger.merge(
+            local: local,
+            remote: remote,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(5_000)
+        )
+
+        let mergedHistoryIds = (result.mergedEnvelope.backup.history ?? []).map(\.chapterId)
+        #expect(mergedHistoryIds == ["c-after"])
+        let mergedSessionIds = (result.mergedEnvelope.backup.readingSessions ?? []).map(\.chapterId)
+        #expect(mergedSessionIds == ["c-after"])
+        #expect(result.mergedEnvelope.tombstones.historyClearedAt == SyncTestFixtures.date(3_000))
+    }
+}

@@ -162,41 +162,49 @@ struct SyncTombstones: Codable, Equatable, Sendable {
     var libraryManga: [SyncMangaTombstone]
     var history: [SyncHistoryTombstone]
     var mangaHistory: [SyncMangaTombstone]
+    var historyClearedAt: Date?
     var categories: [SyncCategoryTombstone]
     var tracks: [SyncTrackTombstone]
     var categoryUpserts: [SyncCategoryUpsert]
     var trackUpserts: [SyncTrackUpsert]
     var mangaCategoryUpdates: [SyncMangaCategoryUpdate]
+    var mangaDetailsUpdates: [SyncMangaCategoryUpdate]
 
     static let empty = SyncTombstones(
         libraryManga: [],
         history: [],
         mangaHistory: [],
+        historyClearedAt: nil,
         categories: [],
         tracks: [],
         categoryUpserts: [],
         trackUpserts: [],
-        mangaCategoryUpdates: []
+        mangaCategoryUpdates: [],
+        mangaDetailsUpdates: []
     )
 
     init(
         libraryManga: [SyncMangaTombstone] = [],
         history: [SyncHistoryTombstone] = [],
         mangaHistory: [SyncMangaTombstone] = [],
+        historyClearedAt: Date? = nil,
         categories: [SyncCategoryTombstone] = [],
         tracks: [SyncTrackTombstone] = [],
         categoryUpserts: [SyncCategoryUpsert] = [],
         trackUpserts: [SyncTrackUpsert] = [],
-        mangaCategoryUpdates: [SyncMangaCategoryUpdate] = []
+        mangaCategoryUpdates: [SyncMangaCategoryUpdate] = [],
+        mangaDetailsUpdates: [SyncMangaCategoryUpdate] = []
     ) {
         self.libraryManga = libraryManga
         self.history = history
         self.mangaHistory = mangaHistory
+        self.historyClearedAt = historyClearedAt
         self.categories = categories
         self.tracks = tracks
         self.categoryUpserts = categoryUpserts
         self.trackUpserts = trackUpserts
         self.mangaCategoryUpdates = mangaCategoryUpdates
+        self.mangaDetailsUpdates = mangaDetailsUpdates
     }
 
     init(from decoder: Decoder) throws {
@@ -204,22 +212,26 @@ struct SyncTombstones: Codable, Equatable, Sendable {
         libraryManga = try container.decodeIfPresent([SyncMangaTombstone].self, forKey: .libraryManga) ?? []
         history = try container.decodeIfPresent([SyncHistoryTombstone].self, forKey: .history) ?? []
         mangaHistory = try container.decodeIfPresent([SyncMangaTombstone].self, forKey: .mangaHistory) ?? []
+        historyClearedAt = try container.decodeIfPresent(Date.self, forKey: .historyClearedAt)
         categories = try container.decodeIfPresent([SyncCategoryTombstone].self, forKey: .categories) ?? []
         tracks = try container.decodeIfPresent([SyncTrackTombstone].self, forKey: .tracks) ?? []
         categoryUpserts = try container.decodeIfPresent([SyncCategoryUpsert].self, forKey: .categoryUpserts) ?? []
         trackUpserts = try container.decodeIfPresent([SyncTrackUpsert].self, forKey: .trackUpserts) ?? []
         mangaCategoryUpdates = try container.decodeIfPresent([SyncMangaCategoryUpdate].self, forKey: .mangaCategoryUpdates) ?? []
+        mangaDetailsUpdates = try container.decodeIfPresent([SyncMangaCategoryUpdate].self, forKey: .mangaDetailsUpdates) ?? []
     }
 
     var isEmpty: Bool {
         libraryManga.isEmpty
             && history.isEmpty
             && mangaHistory.isEmpty
+            && historyClearedAt == nil
             && categories.isEmpty
             && tracks.isEmpty
             && categoryUpserts.isEmpty
             && trackUpserts.isEmpty
             && mangaCategoryUpdates.isEmpty
+            && mangaDetailsUpdates.isEmpty
     }
 
     func canonicalized() -> SyncTombstones {
@@ -230,6 +242,7 @@ struct SyncTombstones: Codable, Equatable, Sendable {
                 .sorted { ($0.sourceId, $0.mangaId, $0.chapterId) < ($1.sourceId, $1.mangaId, $1.chapterId) },
             mangaHistory: Self.deduplicatedMaxDate(mangaHistory, key: \.mangaIdentifier, date: \.deletedAt)
                 .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) },
+            historyClearedAt: historyClearedAt,
             categories: Self.deduplicatedMaxDate(categories, key: \.title, date: \.deletedAt)
                 .sorted { $0.title < $1.title },
             tracks: Self.deduplicatedMaxDate(tracks, key: \.trackKey, date: \.deletedAt)
@@ -239,6 +252,8 @@ struct SyncTombstones: Codable, Equatable, Sendable {
             trackUpserts: Self.deduplicatedMaxDate(trackUpserts, key: \.trackKey, date: \.updatedAt)
                 .sorted { ($0.trackerId, $0.sourceId, $0.mangaId) < ($1.trackerId, $1.sourceId, $1.mangaId) },
             mangaCategoryUpdates: Self.deduplicatedMaxDate(mangaCategoryUpdates, key: \.mangaIdentifier, date: \.updatedAt)
+                .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) },
+            mangaDetailsUpdates: Self.deduplicatedMaxDate(mangaDetailsUpdates, key: \.mangaIdentifier, date: \.updatedAt)
                 .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) }
         )
     }

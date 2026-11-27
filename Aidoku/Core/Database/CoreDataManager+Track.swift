@@ -129,15 +129,10 @@ extension CoreDataManager {
     /// Removes all track items for a tracker.
     func removeTracks(trackerId: String, context: NSManagedObjectContext) {
         // Fork: Record track deletion tombstones for PocketBase sync
-        for track in getTracks(trackerId: trackerId, context: context) {
-            if let sourceId = track.sourceId, let mangaId = track.mangaId {
-                SyncTombstoneStore.shared.recordTrackDeletion(
-                    trackerId: trackerId,
-                    mangaId: MangaIdentifier(sourceKey: sourceId, mangaKey: mangaId)
-                )
-            }
-            context.delete(track)
-        }
+        SyncTombstoneStore.shared.recordTrackDeletions(trackerId: trackerId, context: context)
+        let request = TrackObject.fetchRequest()
+        request.predicate = NSPredicate(format: "trackerId == %@", trackerId)
+        queueClear(request: request, context: context)
     }
 
     func removeTracks(mangaId: MangaIdentifier, context: NSManagedObjectContext) {

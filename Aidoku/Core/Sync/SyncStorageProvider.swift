@@ -43,10 +43,15 @@ struct SyncUploadRequest: Sendable {
 protocol SyncStorageProvider: Sendable {
     var providerId: String { get }
 
+    func refreshSessionIfNeeded() async throws
     func healthCheck() async throws -> SyncHealthStatus
     func fetchLatestMetadata() async throws -> SyncSnapshotMetadata?
     func downloadSnapshot(metadata: SyncSnapshotMetadata) async throws -> Data
     func uploadSnapshot(_ request: SyncUploadRequest) async throws -> SyncSnapshotMetadata
     func listSnapshots(limit: Int) async throws -> [SyncSnapshotMetadata]
     func deleteSnapshot(id: String) async throws
+}
+
+extension SyncStorageProvider {
+    func refreshSessionIfNeeded() async throws {}
 }

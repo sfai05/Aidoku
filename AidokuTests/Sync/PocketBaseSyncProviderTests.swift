@@ -413,3 +413,246 @@ private actor MockHTTPClient: SyncHTTPClient {
         ])
     }
 }
+
+@Suite struct PocketBaseSyncHardeningTests {
+    private func makeJWT(iat: TimeInterval, exp: TimeInterval) -> String {
+        let header = Data(#"{"alg":"HS256","typ":"JWT"}"#.utf8)
+        let payload = Data(#"{"iat":\#(Int(iat)),"exp":\#(Int(exp))}"#.utf8)
+        let encodeSegment: (Data) -> String = { data in
+            data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        return "\(encodeSegment(header)).\(encodeSegment(payload)).sig"
+    }
+
+    @Test func refreshSessionIfNeededRefreshesExpiringJWTAndSkipsFreshJWT() async throws {
+        let suiteName = "ForkSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let config = SyncConfiguration(userDefaults: defaults)
+        config.serverURL = "https://pb.example.com"
+        let keychain = InMemoryKeychainStore()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { dir.removeItem() }
+        let logStore = SyncLogStore(fileURL: dir.appendingPathComponent("logs.json"))
+
+        // 7-day token issued at t=0, expires at t=604_800.
+        let initialJWT = makeJWT(iat: 0, exp: 604_800)
+        let refreshedJWT = makeJWT(iat: 350_000, exp: 954_800)
+        try keychain.writeString(initialJWT, account: SyncKeychainAccount.pocketBaseAuthToken)
+        try keychain.writeString("user123", account: SyncKeychainAccount.pocketBaseUserId)
+        try keychain.writeString("reader@example.com", account: SyncKeychainAccount.pocketBaseUserEmail)
+
+        let clockBox = SyncTestValueBox<TimeInterval>(100_000) // < 50% lifetime and > 24h left
+
+        let client = MockHTTPClient(handlers: [
+            { request in
+                #expect(request.url?.path == "/api/collections/users/auth-refresh")
+                #expect(request.value(forHTTPHeaderField: "Authorization") == initialJWT)
+                return (200, Data(#"{"token":"\#(refreshedJWT)","record":{"id":"user123","email":"reader@example.com"}}"#.utf8))
+            },
+            { _ in
+                (500, Data(#"{"status":500,"message":"temporary server outage"}"#.utf8))
+            }
+        ])
+
+        let provider = PocketBaseSyncProvider(
+            configuration: config,
+            keychain: keychain,
+            httpClient: client,
+            logStore: logStore,
+            nowProvider: {
+                Date(timeIntervalSince1970: clockBox.get())
+            }
+        )
+
+        // Fresh token performs zero HTTP calls.
+        try await provider.refreshSessionIfNeeded()
+        #expect(await client.recordedRequests.isEmpty)
+
+        // Past half-life (t = 350_000 > 302_400) triggers auth-refresh and updates Keychain.
+        clockBox.set(350_000)
+        try await provider.refreshSessionIfNeeded()
+        #expect(try keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken) == refreshedJWT)
+        #expect(await client.recordedRequests.count == 1)
+
+        // While refreshed token is within warning threshold (t = 900_000, < 24h left) and server returns 500,
+        // unexpired session is preserved with a warning instead of clearing auth.
+        clockBox.set(900_000)
+        try await provider.refreshSessionIfNeeded()
+        #expect(try keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken) == refreshedJWT)
+    }
+
+    @Test func uploadSnapshotDetectsConflictViaGeneric400Fallback() async throws {
+        let suiteName = "ForkSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let config = SyncConfiguration(userDefaults: defaults)
+        config.serverURL = "https://pb.example.com"
+        let keychain = InMemoryKeychainStore()
+        try keychain.writeString("jwt-1", account: SyncKeychainAccount.pocketBaseAuthToken)
+        try keychain.writeString("user_abc", account: SyncKeychainAccount.pocketBaseUserId)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { dir.removeItem() }
+        let logStore = SyncLogStore(fileURL: dir.appendingPathComponent("logs.json"))
+
+        let payloadData = Data("gzip-bytes".utf8)
+        let checksum = SyncEnvelopeCodec.sha256Hex(payloadData)
+        let latestListJSON = """
+        {
+          "items": [{
+            "id": "rec_7",
+            "revision": 7,
+            "device_id": "ipad",
+            "device_name": "iPad",
+            "schema_version": 1,
+            "checksum": "\(checksum)",
+            "payload": "snapshot_r7.aidoku.gz"
+          }]
+        }
+        """
+
+        let client = MockHTTPClient(handlers: [
+            { _ in
+                (400, Data(#"{"status":400,"message":"Failed to create record.","data":{}}"#.utf8))
+            },
+            { _ in
+                (200, Data(latestListJSON.utf8))
+            }
+        ])
+
+        let provider = PocketBaseSyncProvider(
+            configuration: config,
+            keychain: keychain,
+            httpClient: client,
+            logStore: logStore
+        )
+
+        let uploadReq = SyncUploadRequest(
+            revision: 7,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            schemaVersion: 1,
+            checksum: checksum,
+            fileName: "snapshot_r7.aidoku.gz",
+            data: payloadData
+        )
+
+        await #expect(throws: SyncError.revisionConflict(expectedRevision: 7)) {
+            _ = try await provider.uploadSnapshot(uploadReq)
+        }
+        #expect(await client.recordedRequests.count == 2)
+    }
+
+    @Test func provisionCollectionFlagsMisconfiguredExistingCollectionAndAcceptsBacktickIndex() async throws {
+        let suiteName = "ForkSyncTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let config = SyncConfiguration(userDefaults: defaults)
+        let keychain = InMemoryKeychainStore()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { dir.removeItem() }
+        let logStore = SyncLogStore(fileURL: dir.appendingPathComponent("logs.json"))
+
+        let misconfiguredJSON = """
+        {
+          "id": "col_1",
+          "listRule": "",
+          "viewRule": "@request.auth.id != \\"\\" && owner = @request.auth.id",
+          "createRule": "@request.auth.id != \\"\\"",
+          "updateRule": "@request.auth.id != \\"\\"",
+          "deleteRule": "@request.auth.id != \\"\\" && owner = @request.auth.id",
+          "fields": [
+            {"name":"owner","type":"relation"},
+            {"name":"revision","type":"number"},
+            {"name":"device_id","type":"text"},
+            {"name":"schema_version","type":"number"},
+            {"name":"checksum","type":"text"},
+            {"name":"payload","type":"file","protected":false}
+          ],
+          "indexes": []
+        }
+        """
+
+        let validBacktickJSON = """
+        {
+          "id": "col_1",
+          "listRule": "@request.auth.id != \\"\\" && owner = @request.auth.id",
+          "viewRule": "@request.auth.id != \\"\\" && owner = @request.auth.id",
+          "createRule": "@request.auth.id != \\"\\" && @request.body.owner = @request.auth.id",
+          "updateRule": null,
+          "deleteRule": "@request.auth.id != \\"\\" && owner = @request.auth.id",
+          "fields": [
+            {"name":"owner","type":"relation"},
+            {"name":"revision","type":"number"},
+            {"name":"device_id","type":"text"},
+            {"name":"schema_version","type":"number"},
+            {"name":"checksum","type":"text"},
+            {"name":"payload","type":"file","protected":true}
+          ],
+          "indexes": [
+            "CREATE UNIQUE INDEX `idx_owner_rev` ON `kodoku_sync_snapshots` (`owner`, `revision`)"
+          ]
+        }
+        """
+
+        let client = MockHTTPClient(handlers: [
+            { _ in (200, Data(#"{"token":"su-tok","record":{"id":"su1"}}"#.utf8)) },
+            { _ in (200, Data(misconfiguredJSON.utf8)) },
+            { _ in (200, Data(#"{"token":"su-tok","record":{"id":"su1"}}"#.utf8)) },
+            { _ in (200, Data(validBacktickJSON.utf8)) }
+        ])
+
+        let provider = PocketBaseSyncProvider(
+            configuration: config,
+            keychain: keychain,
+            httpClient: client,
+            logStore: logStore
+        )
+
+        let badResult = try await provider.provisionCollection(
+            serverURL: "https://pb.example.com",
+            collectionName: "kodoku_sync_snapshots",
+            superuserEmail: "admin@example.com",
+            superuserPassword: "pw"
+        )
+        guard case let .alreadyExists(_, missing, issues) = badResult else {
+            Issue.record("Expected alreadyExists result")
+            return
+        }
+        #expect(missing.isEmpty)
+        #expect(issues.count >= 4)
+
+        let goodResult = try await provider.provisionCollection(
+            serverURL: "https://pb.example.com",
+            collectionName: "kodoku_sync_snapshots",
+            superuserEmail: "admin@example.com",
+            superuserPassword: "pw"
+        )
+        #expect(goodResult == .alreadyExists(
+            collectionName: "kodoku_sync_snapshots",
+            missingFields: [],
+            configurationIssues: []
+        ))
+    }
+
+    @Test func normalizeServerURLRejectsEmbeddedCredentialsAndLogsRedactUserinfo() {
+        #expect(throws: SyncError.invalidServerURL("Server URL must not contain embedded credentials.")) {
+            _ = try SyncConfiguration.normalizeServerURL("https://user:pass@pb.example.com")
+        }
+        let redacted = SyncLogStore.redactSecrets("POST https://alice:supersecret@pb.example.com/api/records failed")
+        #expect(!redacted.contains("supersecret"))
+        #expect(!redacted.contains("alice:"))
+        #expect(redacted.contains("https://<REDACTED>@pb.example.com"))
+    }
+
+    @Test func httpClientUsesNonCachingSession() {
+        let client = URLSessionSyncHTTPClient()
+        #expect(client.session.configuration.urlCache == nil)
+        #expect(client.session.configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(client.session.configuration.httpCookieStorage == nil)
+        #expect(!client.session.configuration.httpShouldSetCookies)
+    }
+}

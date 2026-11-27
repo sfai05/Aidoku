@@ -96,6 +96,8 @@ actor SyncLogStore {
             (#"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}"#, "<REDACTED_JWT>"),
             // Authorization headers
             (#"(?i)(authorization\s*:\s*(?:bearer\s+)?)[^\s,;\"']+"#, "$1<REDACTED>"),
+            // Embedded URL userinfo credentials
+            (#"(?i)(https?://)[^/\s@]+@"#, "$1<REDACTED>@"),
             // Query parameter tokens (?token=... or &token=...)
             (#"(?i)([?&](?:token|auth|password)=)[^&\s]+"#, "$1<REDACTED>"),
             // JSON password / token fields

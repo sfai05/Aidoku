@@ -226,6 +226,8 @@ extension SettingsView {
                             CoreDataManager.shared.clearHistory(context: context)
                             try? context.save()
                         }
+                        // Fork: Record full history clear tombstone for PocketBase sync
+                        SyncEngine.shared.recordAllHistoryCleared()
                         NotificationCenter.default.post(name: .updateHistory, object: nil)
                     }
                 }
@@ -276,6 +278,7 @@ extension SettingsView {
                         resetSettings()
                         await clearNetworkCache()
                         await CoreDataManager.shared.container.performBackgroundTask { context in
+                            // Fork: Advanced.reset intentionally clears local data only without remote tombstones.
                             CoreDataManager.shared.clearLibrary(context: context)
                             CoreDataManager.shared.clearManga(context: context)
                             CoreDataManager.shared.clearHistory(context: context)

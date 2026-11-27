@@ -6,6 +6,33 @@
 @testable import Aidoku
 import Foundation
 
+final class SyncTestValueBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ newValue: Value) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
+    }
+
+    func mutate(_ transform: (inout Value) -> Void) {
+        lock.lock()
+        transform(&value)
+        lock.unlock()
+    }
+}
+
 enum SyncTestFixtures {
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()

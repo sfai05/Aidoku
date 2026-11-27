@@ -13,14 +13,33 @@ enum SyncObservedEvent: Sendable {
     case historyChaptersRemoved([ChapterIdentifier])
     case historyMangaRemoved(MangaIdentifier)
     case mangaCategoriesUpdated([MangaIdentifier])
+    case mangaDetailsUpdated(MangaIdentifier?)
     case trackAdded(trackerId: String, mangaId: MangaIdentifier)
     case generalChange
 }
 
+@MainActor
+private final class BackgroundTaskBox {
+    var identifier: UIBackgroundTaskIdentifier = .invalid
+    var workerTask: Task<Void, Never>?
+
+    func end() {
+        let currentId = identifier
+        identifier = .invalid
+        guard currentId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(currentId)
+    }
+}
+
 final class SyncObserverBridge: @unchecked Sendable {
+    private let notificationCenter: NotificationCenter
     private let lock = NSLock()
     private var tokens: [NSObjectProtocol] = []
     private var applyingDepth = 0
+
+    init(notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
+    }
 
     deinit {
         stop()
@@ -51,7 +70,7 @@ final class SyncObserverBridge: @unchecked Sendable {
             return
         }
 
-        let center = NotificationCenter.default
+        let center = notificationCenter
         let names: [Notification.Name] = [
             .addToLibrary,
             .removeFromLibrary,
@@ -83,7 +102,7 @@ final class SyncObserverBridge: @unchecked Sendable {
         tokens = []
         lock.unlock()
         for token in currentTokens {
-            NotificationCenter.default.removeObserver(token)
+            notificationCenter.removeObserver(token)
         }
     }
 
@@ -120,6 +139,14 @@ final class SyncObserverBridge: @unchecked Sendable {
                 if let item = notification.object as? TrackItem {
                     event = .trackAdded(trackerId: item.trackerId, mangaId: item.mangaId)
                 }
+            case .updateMangaDetails:
+                if let manga = notification.object as? Manga {
+                    event = .mangaDetailsUpdated(manga.identifier)
+                } else if let mangaId = notification.object as? MangaIdentifier {
+                    event = .mangaDetailsUpdated(mangaId)
+                } else {
+                    event = .mangaDetailsUpdated(nil)
+                }
             default:
                 break
         }
@@ -143,12 +170,17 @@ actor SyncEngine {
     private let nowProvider: @Sendable () -> Date
     private let observerBridge = SyncObserverBridge()
 
-    private var activeSyncTask: Task<SyncResult, Error>?
+    private var isOperationActive = false
+    private var pendingOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var activeCoalescedSyncTask: Task<SyncResult, Error>?
+    private var currentRunningTask: Task<SyncResult, Error>?
     private var isSyncing = false
     private var pendingFollowUpSync = false
     private var lastErrorMessage: String?
     private var lastForegroundSyncAt: Date = .distantPast
     private var debounceTask: Task<Void, Never>?
+
+    let foregroundCooldownSeconds: TimeInterval
 
     init(
         configuration: SyncConfiguration = SyncConfiguration(),
@@ -158,6 +190,7 @@ actor SyncEngine {
         logStore: SyncLogStore = .shared,
         snapshotSource: SyncSnapshotSource = BackupManagerSnapshotSource(),
         snapshotApplier: SyncSnapshotApplier? = nil,
+        foregroundCooldownSeconds: TimeInterval = SyncEngine.foregroundCooldownSeconds,
         nowProvider: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.configuration = configuration
@@ -165,12 +198,14 @@ actor SyncEngine {
         self.provider = provider ?? PocketBaseSyncProvider(
             configuration: configuration,
             keychain: keychain,
-            logStore: logStore
+            logStore: logStore,
+            nowProvider: nowProvider
         )
         self.tombstoneStore = tombstoneStore
         self.logStore = logStore
         self.snapshotSource = snapshotSource
         self.snapshotApplier = snapshotApplier ?? SyncCoreDataApplier(tombstoneStore: tombstoneStore)
+        self.foregroundCooldownSeconds = foregroundCooldownSeconds
         self.nowProvider = nowProvider
     }
 
@@ -178,15 +213,25 @@ actor SyncEngine {
 
     nonisolated func start() {
         observerBridge.startObserving { [weak self] event in
-            guard let self else { return }
+            guard let self, self.configuration.isEnabled else { return }
+            let observedAt = self.nowProvider()
+            Self.recordObservedEvent(event, in: self.tombstoneStore, at: observedAt)
             Task {
-                await self.handleObservedEvent(event)
+                await self.scheduleObservedSync()
             }
         }
     }
 
     nonisolated func stopObserving() {
         observerBridge.stop()
+    }
+
+    nonisolated func recordAllHistoryCleared() {
+        guard configuration.isEnabled else { return }
+        tombstoneStore.recordAllHistoryCleared(at: nowProvider())
+        Task {
+            await self.scheduleObservedSync()
+        }
     }
 
     nonisolated func handleSceneWillEnterForeground() {
@@ -196,39 +241,30 @@ actor SyncEngine {
         }
     }
 
-    nonisolated func handleSceneDidEnterBackground() {
-        Task { @MainActor in
-            let enabled = configuration.isEnabled
-            let hasPending = tombstoneStore.snapshot().hasPendingChanges
-            guard enabled, hasPending else { return }
+    @MainActor func handleSceneDidEnterBackground() {
+        tombstoneStore.flushPendingToDisk()
+        let enabled = configuration.isEnabled
+        let hasPending = tombstoneStore.snapshot().hasPendingChanges
+        guard enabled, hasPending else { return }
 
-            let lock = NSLock()
-            var taskId: UIBackgroundTaskIdentifier = .invalid
-            var workerTask: Task<Void, Never>?
-
-            let endBackgroundTask: @Sendable () -> Void = {
-                lock.lock()
-                let currentId = taskId
-                taskId = .invalid
-                lock.unlock()
-                guard currentId != .invalid else { return }
-                Task { @MainActor in
-                    UIApplication.shared.endBackgroundTask(currentId)
-                }
+        let box = BackgroundTaskBox()
+        let createdId = UIApplication.shared.beginBackgroundTask(withName: "ForkSyncBackgroundFlush") { [weak self] in
+            MainActor.assumeIsolated {
+                box.workerTask?.cancel()
+                box.end()
             }
-
-            let createdId = UIApplication.shared.beginBackgroundTask(withName: "ForkSyncBackgroundFlush") {
-                workerTask?.cancel()
-                endBackgroundTask()
+            Task {
+                await self?.cancelActiveSync()
             }
-            lock.lock()
-            taskId = createdId
-            lock.unlock()
+        }
+        box.identifier = createdId
+        guard createdId != .invalid else { return }
 
-            workerTask = Task {
+        box.workerTask = Task { @MainActor [weak self] in
+            if let self {
                 await self.syncIfNeeded(reason: .background)
-                endBackgroundTask()
             }
+            box.end()
         }
     }
 
@@ -264,20 +300,20 @@ actor SyncEngine {
         guard configuration.isEnabled else {
             throw SyncError.disabled
         }
-        return try await runExclusiveSync(reason: .manual)
+        return try await runSerializedOperation(.regular(.manual))
     }
 
     func syncIfNeeded(reason: SyncTriggerReason) async {
         guard configuration.isEnabled else { return }
         if reason == .foreground {
             let now = nowProvider()
-            guard now.timeIntervalSince(lastForegroundSyncAt) >= Self.foregroundCooldownSeconds else {
+            guard now.timeIntervalSince(lastForegroundSyncAt) >= foregroundCooldownSeconds else {
                 return
             }
             lastForegroundSyncAt = now
         }
         do {
-            _ = try await runExclusiveSync(reason: reason)
+            _ = try await runSerializedOperation(.regular(reason))
         } catch {
             // Errors are persisted on status & SyncLogStore for dashboard inspection.
         }
@@ -310,31 +346,97 @@ extension SyncEngine {
         guard configuration.isEnabled else {
             throw SyncError.disabled
         }
-        if let existingTask = activeSyncTask {
-            _ = try? await existingTask.value
-        }
+        return try await runSerializedOperation(.forcePush)
+    }
 
+    @discardableResult
+    func forcePull(recordId: String? = nil, publishAsNewRevision: Bool = true) async throws -> SyncResult {
+        guard configuration.isEnabled else {
+            throw SyncError.disabled
+        }
+        return try await runSerializedOperation(.forcePull(recordId: recordId, publishAsNewRevision: publishAsNewRevision))
+    }
+
+    @discardableResult
+    func cleanupRemoteSnapshots(keepLatest: Int? = nil) async throws -> Int {
+        let keepCount = max(1, keepLatest ?? configuration.maxRemoteSnapshots)
+        let snapshots = try await provider.listSnapshots(limit: 100)
+        let sorted = snapshots.sorted {
+            if $0.revision != $1.revision {
+                return $0.revision > $1.revision
+            }
+            return $0.createdAt > $1.createdAt
+        }
+        guard sorted.count > keepCount else { return 0 }
+
+        var deleted = 0
+        for stale in sorted.dropFirst(keepCount) {
+            try await provider.deleteSnapshot(id: stale.id)
+            deleted += 1
+        }
+        await logStore.log(level: .info, category: "cleanup", message: "Pruned \(deleted) stale remote snapshot(s).")
+        return deleted
+    }
+
+    func resetLocalSyncState(clearCredentials: Bool = false) async {
         debounceTask?.cancel()
         debounceTask = nil
-
-        isSyncing = true
-        lastErrorMessage = nil
-        postStateChanged()
-
-        let startDate = nowProvider()
+        pendingFollowUpSync = false
+        await acquireExclusiveLock()
         defer {
-            isSyncing = false
+            releaseExclusiveLock()
+            if !isOperationActive {
+                isSyncing = false
+            }
             postStateChanged()
         }
 
+        configuration.resetSyncProgress()
+        tombstoneStore.reset()
+        lastErrorMessage = nil
+
+        if clearCredentials {
+            configuration.isEnabled = false
+            try? keychain.delete(account: SyncKeychainAccount.pocketBaseAuthToken)
+            try? keychain.delete(account: SyncKeychainAccount.pocketBaseUserId)
+            try? keychain.delete(account: SyncKeychainAccount.pocketBaseUserEmail)
+        }
+
+        await logStore.log(
+            level: .warning,
+            category: "recovery",
+            message: clearCredentials ? "Reset local sync state and cleared credentials." : "Reset local sync cursor state."
+        )
+    }
+}
+
+private extension SyncEngine {
+    enum SerializedOperationKind: Sendable {
+        case regular(SyncTriggerReason)
+        case forcePush
+        case forcePull(recordId: String?, publishAsNewRevision: Bool)
+
+        var isForceOperation: Bool {
+            switch self {
+                case .regular:
+                    false
+                case .forcePush, .forcePull:
+                    true
+            }
+        }
+    }
+
+    func performForcePush() async throws -> SyncResult {
+        let startDate = nowProvider()
         do {
+            try await provider.refreshSessionIfNeeded()
             await configuration.ensureDefaultDeviceName()
             var attemptError: Error?
 
             for attempt in 1...Self.maxConflictRetries {
                 let snap = tombstoneStore.snapshotWithEpoch()
                 let backup = await snapshotSource.captureBackup(includeSettings: configuration.includeSettings)
-                let remoteLatest = try? await provider.fetchLatestMetadata()
+                let remoteLatest = try await provider.fetchLatestMetadata()
                 let nextRevision = max(remoteLatest?.revision ?? 0, configuration.lastSyncedRevision) + 1
                 let now = nowProvider()
 
@@ -355,6 +457,9 @@ extension SyncEngine {
                     configuration.lastSyncedRevision = uploaded.revision
                     configuration.lastSyncedRecordId = uploaded.id
                     configuration.lastSyncedChecksum = uploaded.checksum
+                    configuration.lastSyncedSettingsDigest = configuration.includeSettings
+                        ? SyncMerger.settingsDigest(backup.settings)
+                        : nil
                     configuration.lastSyncedAt = now
                     configuration.lastSyncedStats = stats
                     lastErrorMessage = nil
@@ -393,33 +498,21 @@ extension SyncEngine {
         }
     }
 
-    @discardableResult
-    func forcePull(recordId: String? = nil) async throws -> SyncResult {
-        guard configuration.isEnabled else {
-            throw SyncError.disabled
-        }
-        if let existingTask = activeSyncTask {
-            _ = try? await existingTask.value
-        }
-
-        debounceTask?.cancel()
-        debounceTask = nil
-
-        isSyncing = true
-        lastErrorMessage = nil
-        postStateChanged()
-
+    func performForcePull(recordId: String?, publishAsNewRevision: Bool) async throws -> SyncResult {
         let startDate = nowProvider()
-        defer {
-            isSyncing = false
-            postStateChanged()
-        }
-
         do {
+            try await provider.refreshSessionIfNeeded()
+            await configuration.ensureDefaultDeviceName()
+
+            let latestMeta = try await provider.fetchLatestMetadata()
             let targetMeta: SyncSnapshotMetadata? = if let recordId {
-                try await provider.listSnapshots(limit: 50).first { $0.id == recordId }
+                if latestMeta?.id == recordId {
+                    latestMeta
+                } else {
+                    try await provider.listSnapshots(limit: 50).first { $0.id == recordId }
+                }
             } else {
-                try await provider.fetchLatestMetadata()
+                latestMeta
             }
 
             guard let targetMeta else {
@@ -428,18 +521,45 @@ extension SyncEngine {
 
             let rawData = try await provider.downloadSnapshot(metadata: targetMeta)
             let remoteEnvelope = try SyncEnvelopeCodec.decode(rawData)
+            let preApplyEpoch = tombstoneStore.snapshotWithEpoch().epoch
 
-            observerBridge.beginApplyingSync()
-            defer { observerBridge.endApplyingSync() }
-            try await snapshotApplier.replaceAll(with: remoteEnvelope)
+            do {
+                observerBridge.beginApplyingSync()
+                defer { observerBridge.endApplyingSync() }
+                try await snapshotApplier.replaceAll(with: remoteEnvelope)
+            }
 
-            tombstoneStore.replaceTombstones(remoteEnvelope.tombstones, clearPendingChanges: true)
+            let isRestoringOlderSnapshot = recordId != nil && latestMeta != nil && targetMeta.id != latestMeta?.id
+            var finalRevision = targetMeta.revision
+            var finalRecordId = targetMeta.id
+            var finalChecksum = targetMeta.checksum
+
+            if publishAsNewRevision, isRestoringOlderSnapshot {
+                let published = try await publishRollbackSnapshot(
+                    envelope: remoteEnvelope,
+                    latestMeta: latestMeta,
+                    targetMeta: targetMeta
+                )
+                finalRevision = published.revision
+                finalRecordId = published.id
+                finalChecksum = published.checksum
+                await pruneRemoteSnapshotsIfNeeded()
+            }
+
+            tombstoneStore.replaceTombstones(
+                remoteEnvelope.tombstones,
+                clearPendingChanges: true,
+                expectedEpoch: preApplyEpoch
+            )
 
             let now = nowProvider()
             let stats = SyncSnapshotStats.from(backup: remoteEnvelope.backup)
-            configuration.lastSyncedRevision = targetMeta.revision
-            configuration.lastSyncedRecordId = targetMeta.id
-            configuration.lastSyncedChecksum = targetMeta.checksum
+            configuration.lastSyncedRevision = finalRevision
+            configuration.lastSyncedRecordId = finalRecordId
+            configuration.lastSyncedChecksum = finalChecksum
+            configuration.lastSyncedSettingsDigest = configuration.includeSettings
+                ? SyncMerger.settingsDigest(remoteEnvelope.backup.settings)
+                : nil
             configuration.lastSyncedAt = now
             configuration.lastSyncedStats = stats
             lastErrorMessage = nil
@@ -448,11 +568,11 @@ extension SyncEngine {
             await logStore.log(
                 level: .info,
                 category: "recovery",
-                message: "Force Pull restored revision \(targetMeta.revision)."
+                message: "Force Pull restored revision \(targetMeta.revision) (head now rev \(finalRevision))."
             )
             return SyncResult(
                 action: .forcePulled,
-                revision: targetMeta.revision,
+                revision: finalRevision,
                 stats: stats,
                 durationSeconds: max(0, duration)
             )
@@ -463,91 +583,133 @@ extension SyncEngine {
         }
     }
 
-    @discardableResult
-    func cleanupRemoteSnapshots(keepLatest: Int? = nil) async throws -> Int {
-        let keepCount = max(1, keepLatest ?? configuration.maxRemoteSnapshots)
-        let snapshots = try await provider.listSnapshots(limit: 100)
-        let sorted = snapshots.sorted {
-            if $0.revision != $1.revision {
-                return $0.revision > $1.revision
+    func publishRollbackSnapshot(
+        envelope: SyncEnvelope,
+        latestMeta: SyncSnapshotMetadata?,
+        targetMeta: SyncSnapshotMetadata
+    ) async throws -> SyncSnapshotMetadata {
+        for attempt in 1...Self.maxConflictRetries {
+            let currentLatest = (attempt == 1 ? latestMeta : try await provider.fetchLatestMetadata()) ?? targetMeta
+            let nextRevision = max(currentLatest.revision, targetMeta.revision, configuration.lastSyncedRevision) + 1
+            let rollbackEnvelope = SyncEnvelope(
+                schemaVersion: SyncEnvelope.currentSchemaVersion,
+                revision: nextRevision,
+                deviceId: configuration.deviceId,
+                deviceName: configuration.deviceName,
+                updatedAt: nowProvider(),
+                tombstones: envelope.tombstones,
+                backup: envelope.backup
+            )
+            do {
+                return try await encodeAndUpload(envelope: rollbackEnvelope)
+            } catch SyncError.revisionConflict {
+                await logStore.log(
+                    level: .warning,
+                    category: "recovery",
+                    message: "Rollback publish conflict at rev \(nextRevision) (attempt \(attempt))."
+                )
             }
-            return $0.createdAt > $1.createdAt
         }
-        guard sorted.count > keepCount else { return 0 }
-
-        var deleted = 0
-        for stale in sorted.dropFirst(keepCount) {
-            try await provider.deleteSnapshot(id: stale.id)
-            deleted += 1
-        }
-        await logStore.log(level: .info, category: "cleanup", message: "Pruned \(deleted) stale remote snapshot(s).")
-        return deleted
-    }
-
-    func resetLocalSyncState(clearCredentials: Bool = false) async {
-        debounceTask?.cancel()
-        debounceTask = nil
-        pendingFollowUpSync = false
-        configuration.resetSyncProgress()
-        tombstoneStore.reset()
-        lastErrorMessage = nil
-
-        if clearCredentials {
-            configuration.isEnabled = false
-            try? keychain.delete(account: SyncKeychainAccount.pocketBaseAuthToken)
-            try? keychain.delete(account: SyncKeychainAccount.pocketBaseUserId)
-            try? keychain.delete(account: SyncKeychainAccount.pocketBaseUserEmail)
-        }
-
-        await logStore.log(
-            level: .warning,
-            category: "recovery",
-            message: clearCredentials ? "Reset local sync state and cleared credentials." : "Reset local sync cursor state."
-        )
-        postStateChanged()
+        throw SyncError.conflictRetryExhausted(attempts: Self.maxConflictRetries)
     }
 }
 
 // MARK: - Exclusive Sync Runner
 
 private extension SyncEngine {
-    func runExclusiveSync(reason: SyncTriggerReason) async throws -> SyncResult {
-        if let activeSyncTask {
+    func cancelActiveSync() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingFollowUpSync = false
+        currentRunningTask?.cancel()
+    }
+
+    func acquireExclusiveLock() async {
+        if isOperationActive {
+            await withCheckedContinuation { continuation in
+                pendingOperationWaiters.append(continuation)
+            }
+        }
+        isOperationActive = true
+    }
+
+    func releaseExclusiveLock() {
+        if !pendingOperationWaiters.isEmpty {
+            let next = pendingOperationWaiters.removeFirst()
+            next.resume()
+        } else {
+            isOperationActive = false
+        }
+    }
+
+    func executeOperation(_ kind: SerializedOperationKind) async throws -> SyncResult {
+        switch kind {
+            case let .regular(reason):
+                try await performSyncWithRetries(reason: reason)
+            case .forcePush:
+                try await performForcePush()
+            case let .forcePull(recordId, publishAsNewRevision):
+                try await performForcePull(recordId: recordId, publishAsNewRevision: publishAsNewRevision)
+        }
+    }
+
+    func runSerializedOperation(_ kind: SerializedOperationKind) async throws -> SyncResult {
+        if !kind.isForceOperation, let coalesced = activeCoalescedSyncTask, pendingOperationWaiters.isEmpty {
             pendingFollowUpSync = true
-            return try await activeSyncTask.value
+            return try await coalesced.value
         }
 
-        let task = Task<SyncResult, Error> {
-            try await performSyncWithRetries(reason: reason)
+        if kind.isForceOperation {
+            debounceTask?.cancel()
+            debounceTask = nil
+            pendingFollowUpSync = false
         }
-        activeSyncTask = task
+
+        await acquireExclusiveLock()
         isSyncing = true
         lastErrorMessage = nil
         postStateChanged()
 
+        defer {
+            currentRunningTask = nil
+            activeCoalescedSyncTask = nil
+            releaseExclusiveLock()
+            if !isOperationActive {
+                isSyncing = false
+            }
+            postStateChanged()
+        }
+
+        let task = Task<SyncResult, Error> {
+            try await self.executeOperation(kind)
+        }
+        currentRunningTask = task
+        if !kind.isForceOperation {
+            activeCoalescedSyncTask = task
+        }
+
         do {
             var latestResult = try await task.value
-            activeSyncTask = nil
 
-            while pendingFollowUpSync {
-                pendingFollowUpSync = false
-                let followUpTask = Task<SyncResult, Error> {
-                    try await performSyncWithRetries(reason: .debouncedChange)
+            if !kind.isForceOperation {
+                while pendingFollowUpSync, pendingOperationWaiters.isEmpty {
+                    pendingFollowUpSync = false
+                    let followUpTask = Task<SyncResult, Error> {
+                        try await self.executeOperation(.regular(.debouncedChange))
+                    }
+                    currentRunningTask = followUpTask
+                    activeCoalescedSyncTask = followUpTask
+                    latestResult = try await followUpTask.value
                 }
-                activeSyncTask = followUpTask
-                latestResult = try await followUpTask.value
-                activeSyncTask = nil
+            } else if pendingFollowUpSync, pendingOperationWaiters.isEmpty {
+                pendingFollowUpSync = false
+                scheduleDebouncedSync()
             }
 
-            isSyncing = false
-            postStateChanged()
             return latestResult
         } catch {
-            activeSyncTask = nil
             pendingFollowUpSync = false
-            isSyncing = false
             lastErrorMessage = error.localizedDescription
-            postStateChanged()
             throw error
         }
     }
@@ -596,16 +758,27 @@ private extension SyncEngine {
         startDate: Date,
         didApplyLocally: inout Bool
     ) async throws -> SyncResult {
+        try await provider.refreshSessionIfNeeded()
+
         let localSnapshot = tombstoneStore.snapshotWithEpoch()
         let localTombstones = localSnapshot.tombstones
         let hasPendingChanges = localSnapshot.hasPendingChanges
         let epoch = localSnapshot.epoch
+
+        let localSettingsDigest = configuration.includeSettings ? await snapshotSource.currentSettingsDigest() : nil
+        let localSettingsNeedSync = configuration.includeSettings
+            && localSettingsDigest != configuration.lastSyncedSettingsDigest
+        let localSettingsModified = configuration.includeSettings
+            && configuration.lastSyncedSettingsDigest != nil
+            && localSettingsDigest != configuration.lastSyncedSettingsDigest
+
         let remoteLatest = try await provider.fetchLatestMetadata()
         let now = nowProvider()
 
         if
             let remoteLatest,
             !hasPendingChanges,
+            !localSettingsNeedSync,
             remoteLatest.revision == configuration.lastSyncedRevision,
             !remoteLatest.checksum.isEmpty,
             remoteLatest.checksum == configuration.lastSyncedChecksum
@@ -621,12 +794,18 @@ private extension SyncEngine {
             )
         }
 
+        let localUpdatedAt: Date = if hasPendingChanges || localSettingsModified {
+            localSnapshot.lastMutationAt ?? now
+        } else {
+            configuration.lastSyncedAt ?? .distantPast
+        }
+
         let localBackup = await snapshotSource.captureBackup(includeSettings: configuration.includeSettings)
         let localEnvelope = SyncEnvelope(
             revision: configuration.lastSyncedRevision,
             deviceId: configuration.deviceId,
             deviceName: configuration.deviceName,
-            updatedAt: now,
+            updatedAt: localUpdatedAt,
             tombstones: localTombstones,
             backup: localBackup
         )
@@ -647,6 +826,9 @@ private extension SyncEngine {
             configuration.lastSyncedRevision = uploaded.revision
             configuration.lastSyncedRecordId = uploaded.id
             configuration.lastSyncedChecksum = uploaded.checksum
+            configuration.lastSyncedSettingsDigest = configuration.includeSettings
+                ? SyncMerger.settingsDigest(localBackup.settings)
+                : nil
             configuration.lastSyncedAt = now
             configuration.lastSyncedStats = stats
             lastErrorMessage = nil
@@ -673,7 +855,8 @@ private extension SyncEngine {
             deviceId: configuration.deviceId,
             deviceName: configuration.deviceName,
             now: now,
-            includeSettings: configuration.includeSettings
+            includeSettings: configuration.includeSettings,
+            localSettingsModified: configuration.includeSettings ? localSettingsModified : nil
         )
 
         if mergeResult.localNeedsApply {
@@ -721,6 +904,9 @@ private extension SyncEngine {
         configuration.lastSyncedRevision = finalRevision
         configuration.lastSyncedRecordId = finalRecordId
         configuration.lastSyncedChecksum = finalChecksum
+        configuration.lastSyncedSettingsDigest = configuration.includeSettings
+            ? SyncMerger.settingsDigest(mergeResult.mergedEnvelope.backup.settings)
+            : nil
         configuration.lastSyncedAt = now
         configuration.lastSyncedStats = mergeResult.stats
         lastErrorMessage = nil
@@ -770,40 +956,52 @@ private extension SyncEngine {
 
     // MARK: - Change Observation & Debounce
 
-    private func handleObservedEvent(_ event: SyncObservedEvent) {
+    private nonisolated static func recordObservedEvent(
+        _ event: SyncObservedEvent,
+        in tombstoneStore: SyncTombstoneStore,
+        at observedAt: Date
+    ) {
         switch event {
             case let .libraryAdded(id):
                 if let id {
-                    tombstoneStore.recordLibraryAddition(mangaId: id)
+                    tombstoneStore.recordLibraryAddition(mangaId: id, at: observedAt)
                 } else {
-                    tombstoneStore.markPendingLocalChanges()
+                    tombstoneStore.markPendingLocalChanges(at: observedAt)
                 }
             case let .libraryRemoved(id):
                 if let id {
-                    tombstoneStore.recordLibraryDeletion(mangaId: id)
+                    tombstoneStore.recordLibraryDeletion(mangaId: id, at: observedAt)
                 } else {
-                    tombstoneStore.markPendingLocalChanges()
+                    tombstoneStore.markPendingLocalChanges(at: observedAt)
                 }
             case let .historyRead(ids):
-                tombstoneStore.recordHistoryRead(chapterIds: ids)
+                tombstoneStore.recordHistoryRead(chapterIds: ids, at: observedAt)
             case let .historyChaptersRemoved(ids):
-                tombstoneStore.recordHistoryDeletion(chapterIds: ids)
+                tombstoneStore.recordHistoryDeletion(chapterIds: ids, at: observedAt)
             case let .historyMangaRemoved(id):
-                tombstoneStore.recordMangaHistoryDeletion(mangaId: id)
+                tombstoneStore.recordMangaHistoryDeletion(mangaId: id, at: observedAt)
             case let .mangaCategoriesUpdated(ids):
                 if ids.isEmpty {
-                    tombstoneStore.markPendingLocalChanges()
+                    tombstoneStore.markPendingLocalChanges(at: observedAt)
                 } else {
                     for id in ids {
-                        tombstoneStore.recordMangaCategoriesUpdate(mangaId: id)
+                        tombstoneStore.recordMangaCategoriesUpdate(mangaId: id, at: observedAt)
                     }
                 }
+            case let .mangaDetailsUpdated(id):
+                if let id {
+                    tombstoneStore.recordMangaDetailsUpdate(mangaId: id, at: observedAt)
+                } else {
+                    tombstoneStore.markPendingLocalChanges(at: observedAt)
+                }
             case let .trackAdded(trackerId, mangaId):
-                tombstoneStore.recordTrackUpsert(trackerId: trackerId, mangaId: mangaId)
+                tombstoneStore.recordTrackUpsert(trackerId: trackerId, mangaId: mangaId, at: observedAt)
             case .generalChange:
-                tombstoneStore.markPendingLocalChanges()
+                tombstoneStore.markPendingLocalChanges(at: observedAt)
         }
+    }
 
+    private func scheduleObservedSync() {
         guard configuration.isEnabled else { return }
         postStateChanged()
         scheduleDebouncedSync()

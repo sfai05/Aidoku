@@ -42,6 +42,7 @@ enum SyncMerger {
         deviceName: String,
         now: Date = Date(),
         includeSettings: Bool = false,
+        localSettingsModified: Bool? = nil,
         tombstoneTTL: TimeInterval = defaultTombstoneTTL
     ) -> SyncMergeResult {
         var tombstones = mergeTombstones(local: local.tombstones, remote: remote.tombstones)
@@ -77,7 +78,14 @@ enum SyncMerger {
         let mergedSessions = mergeReadingSessions(
             local: local.backup.readingSessions ?? [],
             remote: remote.backup.readingSessions ?? [],
-            suppressedChapterDeletes: suppressedChapterDeletes
+            filters: SessionFilterContext(
+                suppressedChapterDeletes: suppressedChapterDeletes,
+                mangaHistoryDeletes: Dictionary(
+                    tombstones.mangaHistory.map { ($0.mangaIdentifier, $0.deletedAt) },
+                    uniquingKeysWith: max
+                ),
+                historyClearedAt: tombstones.historyClearedAt
+            )
         )
 
         let mergedUpdates = mergeUpdates(
@@ -100,8 +108,7 @@ enum SyncMerger {
         let mergedSources = mergeSources(
             local: local.backup.sources ?? [],
             remote: remote.backup.sources ?? [],
-            localUpdatedAt: local.updatedAt,
-            remoteUpdatedAt: remote.updatedAt
+            inputs: inputs
         )
 
         let mergedSourceLists = mergeSourceLists(
@@ -112,9 +119,9 @@ enum SyncMerger {
         let mergedSettings = mergeSettings(
             local: local.backup.settings,
             remote: remote.backup.settings,
-            localUpdatedAt: local.updatedAt,
-            remoteUpdatedAt: remote.updatedAt,
-            includeSettings: includeSettings
+            inputs: inputs,
+            includeSettings: includeSettings,
+            localSettingsModified: localSettingsModified
         )
 
         let cutoffDate = now.addingTimeInterval(-tombstoneTTL)
@@ -176,6 +183,43 @@ enum SyncMerger {
     }
 }
 
+extension SyncMerger {
+    static func pruneTombstones(_ tombstones: SyncTombstones, olderThan cutoff: Date) -> SyncTombstones {
+        SyncTombstones(
+            libraryManga: tombstones.libraryManga.filter { $0.deletedAt >= cutoff },
+            history: tombstones.history.filter { $0.deletedAt >= cutoff },
+            mangaHistory: tombstones.mangaHistory.filter { $0.deletedAt >= cutoff },
+            historyClearedAt: tombstones.historyClearedAt.flatMap { $0 >= cutoff ? $0 : nil },
+            categories: tombstones.categories.filter { $0.deletedAt >= cutoff },
+            tracks: tombstones.tracks.filter { $0.deletedAt >= cutoff },
+            categoryUpserts: tombstones.categoryUpserts.filter { $0.updatedAt >= cutoff },
+            trackUpserts: tombstones.trackUpserts.filter { $0.updatedAt >= cutoff },
+            mangaCategoryUpdates: tombstones.mangaCategoryUpdates.filter { $0.updatedAt >= cutoff },
+            mangaDetailsUpdates: tombstones.mangaDetailsUpdates.filter { $0.updatedAt >= cutoff }
+        )
+    }
+
+    static func settingsDigest(_ settings: [String: JSONAnyValue]?) -> String {
+        let filtered = (settings ?? [:]).filter { isAllowedSyncSettingKey($0.key) }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .secondsSince1970
+        let data = (try? encoder.encode(filtered)) ?? Data()
+        return SyncEnvelopeCodec.sha256Hex(data)
+    }
+
+    static func maxOptionalDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+        switch (lhs, rhs) {
+            case let (.some(l), .some(r)):
+                max(l, r)
+            case let (.some(l), .none), let (.none, .some(l)):
+                l
+            case (.none, .none):
+                nil
+        }
+    }
+}
+
 // MARK: - Step Helpers
 
 private extension SyncMerger {
@@ -187,10 +231,15 @@ private extension SyncMerger {
     struct LibraryPairDates {
         let localCategoryDate: Date?
         let remoteCategoryDate: Date?
-        let localFallbackDate: Date
-        let remoteFallbackDate: Date
+        let inputs: MergeInputs
         let activeCategoryTitles: Set<String>
         let reAddedAfterDelete: Bool
+    }
+
+    struct SessionFilterContext {
+        let suppressedChapterDeletes: [ChapterIdentifier: Date]
+        let mangaHistoryDeletes: [MangaIdentifier: Date]
+        let historyClearedAt: Date?
     }
 
     static func mergeTombstones(local: SyncTombstones, remote: SyncTombstones) -> SyncTombstones {
@@ -198,25 +247,14 @@ private extension SyncMerger {
             libraryManga: local.libraryManga + remote.libraryManga,
             history: local.history + remote.history,
             mangaHistory: local.mangaHistory + remote.mangaHistory,
+            historyClearedAt: maxOptionalDate(local.historyClearedAt, remote.historyClearedAt),
             categories: local.categories + remote.categories,
             tracks: local.tracks + remote.tracks,
             categoryUpserts: local.categoryUpserts + remote.categoryUpserts,
             trackUpserts: local.trackUpserts + remote.trackUpserts,
-            mangaCategoryUpdates: local.mangaCategoryUpdates + remote.mangaCategoryUpdates
+            mangaCategoryUpdates: local.mangaCategoryUpdates + remote.mangaCategoryUpdates,
+            mangaDetailsUpdates: local.mangaDetailsUpdates + remote.mangaDetailsUpdates
         ).canonicalized()
-    }
-
-    private static func pruneTombstones(_ tombstones: SyncTombstones, olderThan cutoff: Date) -> SyncTombstones {
-        SyncTombstones(
-            libraryManga: tombstones.libraryManga.filter { $0.deletedAt >= cutoff },
-            history: tombstones.history.filter { $0.deletedAt >= cutoff },
-            mangaHistory: tombstones.mangaHistory.filter { $0.deletedAt >= cutoff },
-            categories: tombstones.categories.filter { $0.deletedAt >= cutoff },
-            tracks: tombstones.tracks.filter { $0.deletedAt >= cutoff },
-            categoryUpserts: tombstones.categoryUpserts.filter { $0.updatedAt >= cutoff },
-            trackUpserts: tombstones.trackUpserts.filter { $0.updatedAt >= cutoff },
-            mangaCategoryUpdates: tombstones.mangaCategoryUpdates.filter { $0.updatedAt >= cutoff }
-        )
     }
 
     static func mergeCategories(
@@ -273,8 +311,7 @@ private extension SyncMerger {
                     preferLocalTimestamp(
                         localItemDate: localUpsertDates[title],
                         remoteItemDate: remoteUpsertDates[title],
-                        localFallback: inputs.local.updatedAt,
-                        remoteFallback: inputs.remote.updatedAt
+                        inputs: inputs
                     ) ? lItem : rItem
                 case let (.some(lItem), .none):
                     lItem
@@ -339,8 +376,7 @@ private extension SyncMerger {
             let pairDates = LibraryPairDates(
                 localCategoryDate: localCatDates[id],
                 remoteCategoryDate: remoteCatDates[id],
-                localFallbackDate: inputs.local.updatedAt,
-                remoteFallbackDate: inputs.remote.updatedAt,
+                inputs: inputs,
                 activeCategoryTitles: activeCategoryTitles,
                 reAddedAfterDelete: deletedAt != nil
             )
@@ -389,8 +425,7 @@ private extension SyncMerger {
                     combined.categories = preferLocalTimestamp(
                         localItemDate: context.localCategoryDate,
                         remoteItemDate: context.remoteCategoryDate,
-                        localFallback: context.localFallbackDate,
-                        remoteFallback: context.remoteFallbackDate
+                        inputs: context.inputs
                     ) ? lCats : rCats
                 } else {
                     combined.categories = Array(Set(lCats).union(rCats)).sorted()
@@ -421,6 +456,14 @@ private extension SyncMerger {
             (inputs.remote.backup.library ?? []).map { ($0.identifier, $0) },
             uniquingKeysWith: { first, _ in first }
         )
+        let localDetailsDates = Dictionary(
+            inputs.local.tombstones.mangaDetailsUpdates.map { ($0.mangaIdentifier, $0.updatedAt) },
+            uniquingKeysWith: max
+        )
+        let remoteDetailsDates = Dictionary(
+            inputs.remote.tombstones.mangaDetailsUpdates.map { ($0.mangaIdentifier, $0.updatedAt) },
+            uniquingKeysWith: max
+        )
         let localMap = Dictionary(
             (inputs.local.backup.manga ?? []).map { (MangaIdentifier(sourceKey: $0.sourceId, mangaKey: $0.id), $0) },
             uniquingKeysWith: { first, _ in first }
@@ -434,9 +477,13 @@ private extension SyncMerger {
         for id in Set(localMap.keys).union(remoteMap.keys) where !deletedLibraryIds.contains(id) {
             switch (localMap[id], remoteMap[id]) {
                 case let (.some(lItem), .some(rItem)):
-                    let lDate = localLibMap[id]?.lastUpdated ?? inputs.local.updatedAt
-                    let rDate = remoteLibMap[id]?.lastUpdated ?? inputs.remote.updatedAt
-                    let preferLocal = lDate >= rDate
+                    let lDate = maxOptionalDate(localDetailsDates[id], localLibMap[id]?.lastUpdated)
+                    let rDate = maxOptionalDate(remoteDetailsDates[id], remoteLibMap[id]?.lastUpdated)
+                    let preferLocal = preferLocalTimestamp(
+                        localItemDate: lDate,
+                        remoteItemDate: rDate,
+                        inputs: inputs
+                    )
                     let base = preferLocal ? lItem : rItem
                     let other = preferLocal ? rItem : lItem
                     result.append(mergeMangaEntry(base: base, other: other))
@@ -528,11 +575,14 @@ private extension SyncMerger {
                 case let (.some(lItem), .some(rItem)):
                     let lDate = localLibMap[id.mangaIdentifier]?.lastUpdatedChapters
                         ?? localLibMap[id.mangaIdentifier]?.lastUpdated
-                        ?? inputs.local.updatedAt
                     let rDate = remoteLibMap[id.mangaIdentifier]?.lastUpdatedChapters
                         ?? remoteLibMap[id.mangaIdentifier]?.lastUpdated
-                        ?? inputs.remote.updatedAt
-                    merged.append(lDate >= rDate ? lItem : rItem)
+                    let preferLocal = preferLocalTimestamp(
+                        localItemDate: lDate,
+                        remoteItemDate: rDate,
+                        inputs: inputs
+                    )
+                    merged.append(preferLocal ? lItem : rItem)
                 case let (.some(item), .none), let (.none, .some(item)):
                     merged.append(item)
                 case (.none, .none):
@@ -584,8 +634,8 @@ private extension SyncMerger {
             guard let winning = candidate else { continue }
 
             let effectiveDeletedAt = maxOptionalDate(
-                chapterDeletes[id],
-                mangaDeletes[id.mangaIdentifier]
+                maxOptionalDate(chapterDeletes[id], mangaDeletes[id.mangaIdentifier]),
+                tombstones.historyClearedAt
             )
 
             if let effectiveDeletedAt, effectiveDeletedAt >= winning.dateRead {
@@ -647,14 +697,21 @@ private extension SyncMerger {
     private static func mergeReadingSessions(
         local: [BackupReadingSession],
         remote: [BackupReadingSession],
-        suppressedChapterDeletes: [ChapterIdentifier: Date]
+        filters: SessionFilterContext
     ) -> [BackupReadingSession] {
         var seen = Set<BackupReadingSession>()
         var result: [BackupReadingSession] = []
 
         for session in local + remote {
             guard session.endDate > session.startDate, session.pagesRead > 0 else { continue }
-            if let deletedAt = suppressedChapterDeletes[session.identifier], deletedAt >= session.endDate {
+            let deletedAt = maxOptionalDate(
+                maxOptionalDate(
+                    filters.suppressedChapterDeletes[session.identifier],
+                    filters.mangaHistoryDeletes[session.identifier.mangaIdentifier]
+                ),
+                filters.historyClearedAt
+            )
+            if let deletedAt, deletedAt >= session.endDate {
                 continue
             }
             if seen.insert(session).inserted {
@@ -733,8 +790,7 @@ private extension SyncMerger {
                     preferLocalTimestamp(
                         localItemDate: localUpsertDates[key],
                         remoteItemDate: remoteUpsertDates[key],
-                        localFallback: inputs.local.updatedAt,
-                        remoteFallback: inputs.remote.updatedAt
+                        inputs: inputs
                     ) ? lItem : rItem
                 case let (.some(item), .none), let (.none, .some(item)):
                     item
@@ -791,11 +847,11 @@ private extension SyncMerger {
     private static func mergeSources(
         local: [BackupSource],
         remote: [BackupSource],
-        localUpdatedAt: Date,
-        remoteUpdatedAt: Date
+        inputs: MergeInputs
     ) -> [BackupSource] {
         var map: [String: BackupSource] = [:]
-        let ordered = localUpdatedAt >= remoteUpdatedAt ? (remote + local) : (local + remote)
+        let preferLocal = preferLocalEnvelope(local: inputs.local, remote: inputs.remote)
+        let ordered = preferLocal ? (remote + local) : (local + remote)
         for item in ordered {
             if let existing = map[item.id] {
                 if item.config != nil || existing.config == nil {
@@ -820,14 +876,25 @@ private extension SyncMerger {
     private static func mergeSettings(
         local: [String: JSONAnyValue]?,
         remote: [String: JSONAnyValue]?,
-        localUpdatedAt: Date,
-        remoteUpdatedAt: Date,
-        includeSettings: Bool
+        inputs: MergeInputs,
+        includeSettings: Bool,
+        localSettingsModified: Bool?
     ) -> [String: JSONAnyValue]? {
         guard includeSettings else { return nil }
         var combined: [String: JSONAnyValue] = [:]
-        let older = localUpdatedAt >= remoteUpdatedAt ? (remote ?? [:]) : (local ?? [:])
-        let newer = localUpdatedAt >= remoteUpdatedAt ? (local ?? [:]) : (remote ?? [:])
+        let preferLocal: Bool = if let localSettingsModified {
+            if !localSettingsModified {
+                false
+            } else if inputs.local.updatedAt != inputs.remote.updatedAt {
+                inputs.local.updatedAt > inputs.remote.updatedAt
+            } else {
+                preferLocalEnvelope(local: inputs.local, remote: inputs.remote)
+            }
+        } else {
+            preferLocalEnvelope(local: inputs.local, remote: inputs.remote)
+        }
+        let older = preferLocal ? (remote ?? [:]) : (local ?? [:])
+        let newer = preferLocal ? (local ?? [:]) : (remote ?? [:])
 
         for (key, value) in older where isAllowedSyncSettingKey(key) {
             combined[key] = value
@@ -838,32 +905,33 @@ private extension SyncMerger {
         return combined.isEmpty ? [:] : combined
     }
 
+    static func preferLocalEnvelope(local: SyncEnvelope, remote: SyncEnvelope) -> Bool {
+        if local.revision != remote.revision {
+            return local.revision > remote.revision
+        }
+        if local.updatedAt != remote.updatedAt {
+            return local.updatedAt > remote.updatedAt
+        }
+        return local.deviceId > remote.deviceId
+    }
+
     static func preferLocalTimestamp(
         localItemDate: Date?,
         remoteItemDate: Date?,
-        localFallback: Date,
-        remoteFallback: Date
+        inputs: MergeInputs
     ) -> Bool {
         switch (localItemDate, remoteItemDate) {
             case let (.some(l), .some(r)):
-                l >= r
+                if l != r {
+                    return l > r
+                }
+                return preferLocalEnvelope(local: inputs.local, remote: inputs.remote)
             case (.some, .none):
-                true
+                return true
             case (.none, .some):
-                false
+                return false
             case (.none, .none):
-                localFallback >= remoteFallback
-        }
-    }
-
-    static func maxOptionalDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
-        switch (lhs, rhs) {
-            case let (.some(l), .some(r)):
-                max(l, r)
-            case let (.some(l), .none), let (.none, .some(l)):
-                l
-            case (.none, .none):
-                nil
+                return preferLocalEnvelope(local: inputs.local, remote: inputs.remote)
         }
     }
 }
@@ -918,11 +986,13 @@ private struct SyncSemanticState: Equatable {
         let library: [MangaDateKey]
         let history: [ChapterDateKey]
         let mangaHistory: [MangaDateKey]
+        let historyClearedAt: RoundedDate
         let categories: [StringDateKey]
         let tracks: [TrackDateKey]
         let categoryUpserts: [StringDateKey]
         let trackUpserts: [TrackDateKey]
         let mangaCategoryUpdates: [MangaDateKey]
+        let mangaDetailsUpdates: [MangaDateKey]
     }
 
     struct LibraryKey: Equatable {
@@ -1125,6 +1195,7 @@ private struct SyncSemanticState: Equatable {
             mangaHistory: canonicalTombstones.mangaHistory.map {
                 MangaDateKey(sourceId: $0.sourceId, mangaId: $0.mangaId, date: RoundedDate($0.deletedAt))
             },
+            historyClearedAt: RoundedDate(canonicalTombstones.historyClearedAt),
             categories: canonicalTombstones.categories.map {
                 StringDateKey(value: $0.title, date: RoundedDate($0.deletedAt))
             },
@@ -1148,6 +1219,9 @@ private struct SyncSemanticState: Equatable {
                 )
             },
             mangaCategoryUpdates: canonicalTombstones.mangaCategoryUpdates.map {
+                MangaDateKey(sourceId: $0.sourceId, mangaId: $0.mangaId, date: RoundedDate($0.updatedAt))
+            },
+            mangaDetailsUpdates: canonicalTombstones.mangaDetailsUpdates.map {
                 MangaDateKey(sourceId: $0.sourceId, mangaId: $0.mangaId, date: RoundedDate($0.updatedAt))
             }
         )

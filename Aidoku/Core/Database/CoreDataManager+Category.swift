@@ -159,6 +159,8 @@ extension CoreDataManager {
         for (index, category) in categories.enumerated() where category.sort != index {
             category.sort = Int16(index)
         }
+        // Fork: Record category reorder for PocketBase sync
+        SyncTombstoneStore.shared.recordCategoryUpserts(titles: categories.compactMap(\.title))
     }
 
     /// Add categories to library manga.

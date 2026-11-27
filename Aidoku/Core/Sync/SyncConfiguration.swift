@@ -24,6 +24,7 @@ final class SyncConfiguration: @unchecked Sendable {
         static let autoSyncOnForeground = "\(prefix)autoSyncOnForeground"
         static let autoSyncDebounceSeconds = "\(prefix)autoSyncDebounceSeconds"
         static let lastSyncedStats = "\(prefix)lastSyncedStats"
+        static let lastSyncedSettingsDigest = "\(prefix)lastSyncedSettingsDigest"
     }
 
     private let userDefaults: UserDefaults
@@ -180,6 +181,23 @@ final class SyncConfiguration: @unchecked Sendable {
         }
     }
 
+    var lastSyncedSettingsDigest: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return userDefaults.string(forKey: Key.lastSyncedSettingsDigest)
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            if let newValue {
+                userDefaults.set(newValue, forKey: Key.lastSyncedSettingsDigest)
+            } else {
+                userDefaults.removeObject(forKey: Key.lastSyncedSettingsDigest)
+            }
+        }
+    }
+
     var lastSyncedAt: Date? {
         get {
             lock.lock()
@@ -289,6 +307,7 @@ final class SyncConfiguration: @unchecked Sendable {
         userDefaults.removeObject(forKey: Key.lastSyncedRevision)
         userDefaults.removeObject(forKey: Key.lastSyncedRecordId)
         userDefaults.removeObject(forKey: Key.lastSyncedChecksum)
+        userDefaults.removeObject(forKey: Key.lastSyncedSettingsDigest)
         userDefaults.removeObject(forKey: Key.lastSyncedAt)
         userDefaults.removeObject(forKey: Key.lastSyncedStats)
     }
@@ -303,9 +322,14 @@ final class SyncConfiguration: @unchecked Sendable {
             let scheme = components.scheme?.lowercased(),
             scheme == "http" || scheme == "https",
             let host = components.host,
-            !host.isEmpty,
-            let url = components.url
+            !host.isEmpty
         else {
+            throw SyncError.invalidServerURL(raw)
+        }
+        guard components.user == nil && components.password == nil else {
+            throw SyncError.invalidServerURL("Server URL must not contain embedded credentials.")
+        }
+        guard let url = components.url else {
             throw SyncError.invalidServerURL(raw)
         }
         return url
