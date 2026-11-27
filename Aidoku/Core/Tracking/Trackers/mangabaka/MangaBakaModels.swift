@@ -5,6 +5,7 @@
 //  Created by Skitty on 2/24/26.
 //
 
+import AidokuRunner
 import Foundation
 
 struct MangaBakaResponse<T: Decodable>: Decodable {
@@ -37,6 +38,17 @@ enum MangaBakaStatus: String, Decodable {
             case .upcoming: .notPublished
         }
     }
+
+    // MARK: - Fork: AidokuRunner status conversion for metadata pull
+    func toRunnerStatus() -> AidokuRunner.PublishingStatus {
+        switch self {
+            case .cancelled: .cancelled
+            case .completed: .completed
+            case .hiatus: .hiatus
+            case .releasing: .ongoing
+            case .unknown, .upcoming: .unknown
+        }
+    }
 }
 
 enum MangaBakaType: String, Decodable {
@@ -66,7 +78,48 @@ enum MangaBakaContentRating: String, Decodable {
     case pornographic
 }
 
-struct MangaBakaSeries: Decodable {
+// MARK: - Fork: Extended series metadata for tracker metadata pull
+private struct AnyDecodableSkip: Decodable {
+    init(from decoder: Decoder) throws {}
+}
+
+private struct LossyDecodableArray<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var decoded: [Element] = []
+        while !container.isAtEnd {
+            if (try? container.decodeNil()) == true {
+                continue
+            }
+            if let value = try? container.decode(Element.self) {
+                decoded.append(value)
+            } else if (try? container.decode(AnyDecodableSkip.self)) == nil {
+                break
+            }
+        }
+        self.elements = decoded
+    }
+}
+
+struct MangaBakaTitle: Decodable, Equatable, Sendable {
+    let language: String?
+    let title: String
+    let isPrimary: Bool?
+    let traits: [String]?
+    let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case language
+        case title
+        case isPrimary = "is_primary"
+        case traits
+        case note
+    }
+}
+
+struct MangaBakaSeries: Decodable, Sendable {
     let id: Int
     let title: String
     let cover: Cover
@@ -77,8 +130,17 @@ struct MangaBakaSeries: Decodable {
     let totalChapters: String?
     let finalVolume: String?
 
-    struct Cover: Decodable {
-        struct Raw: Decodable {
+    // Fork: Extended metadata fields for metadata pull
+    let originalLanguage: String?
+    let nativeTitle: String?
+    let romanizedTitle: String?
+    let titles: [MangaBakaTitle]?
+    let authors: [String]?
+    let artists: [String]?
+    let genres: [String]?
+
+    struct Cover: Decodable, Sendable {
+        struct Raw: Decodable, Sendable {
             let url: String?
         }
         let raw: Raw
@@ -93,6 +155,34 @@ struct MangaBakaSeries: Decodable {
         case type
         case totalChapters = "total_chapters"
         case finalVolume = "final_volume"
+        case originalLanguage = "original_language"
+        case nativeTitle = "native_title"
+        case romanizedTitle = "romanized_title"
+        case titles
+        case authors
+        case artists
+        case genres
+    }
+
+    // Fork: Leniently decode extended metadata fields so unexpected API payloads never break tracker search/sync
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.cover = try container.decode(Cover.self, forKey: .cover)
+        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        self.status = try container.decode(MangaBakaStatus.self, forKey: .status)
+        self.type = try container.decode(MangaBakaType.self, forKey: .type)
+        self.totalChapters = try container.decodeIfPresent(String.self, forKey: .totalChapters)
+        self.finalVolume = try container.decodeIfPresent(String.self, forKey: .finalVolume)
+
+        self.originalLanguage = try? container.decodeIfPresent(String.self, forKey: .originalLanguage)
+        self.nativeTitle = try? container.decodeIfPresent(String.self, forKey: .nativeTitle)
+        self.romanizedTitle = try? container.decodeIfPresent(String.self, forKey: .romanizedTitle)
+        self.titles = (try? container.decodeIfPresent(LossyDecodableArray<MangaBakaTitle>.self, forKey: .titles))?.elements
+        self.authors = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .authors))?.elements
+        self.artists = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .artists))?.elements
+        self.genres = (try? container.decodeIfPresent(LossyDecodableArray<String>.self, forKey: .genres))?.elements
     }
 }
 

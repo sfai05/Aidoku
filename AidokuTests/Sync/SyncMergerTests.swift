@@ -826,3 +826,474 @@ import Testing
         #expect(result.mergedEnvelope.tombstones.historyClearedAt == SyncTestFixtures.date(3_000))
     }
 }
+
+@Suite struct SyncMergerMetadataFieldTests {
+    @Test func perFieldResetClearsEditedBitEvenAgainstStaleRemoteEditedState() {
+        let titleAndCover = EditedKeys.title.union(.cover).rawValue
+        let coverOnly = EditedKeys.cover.rawValue
+
+        // Local device reset `.title` back to source default at t=3_000 while keeping `.cover` edited.
+        let local = SyncEnvelope(
+            revision: 3,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(3_000),
+            tombstones: SyncTombstones(
+                mangaDetailsUpdates: [
+                    SyncMangaCategoryUpdate(sourceId: "mangadex", mangaId: "m1", updatedAt: SyncTestFixtures.date(3_000))
+                ],
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.title.rawValue,
+                        updatedAt: SyncTestFixtures.date(3_000),
+                        isReset: true
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(3_000))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Source Default Title",
+                        cover: "https://images.mangabaka.dev/custom.jpg",
+                        editedKeys: Int(coverOnly)
+                    )
+                ]
+            )
+        )
+
+        // Remote device still has stale edited `.title` from t=1_000 and newer unrelated library update at t=3_500.
+        let remote = SyncEnvelope(
+            revision: 3,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(3_500),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.title.rawValue,
+                        updatedAt: SyncTestFixtures.date(1_000),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(3_500))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Stale Custom Title",
+                        cover: "https://images.mangabaka.dev/custom.jpg",
+                        editedKeys: Int(titleAndCover)
+                    )
+                ]
+            )
+        )
+
+        let result = SyncMerger.merge(
+            local: local,
+            remote: remote,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(4_000)
+        )
+
+        let merged = result.mergedEnvelope.backup.manga?.first
+        #expect(merged?.title == "Source Default Title")
+        #expect(merged?.cover == "https://images.mangabaka.dev/custom.jpg")
+        #expect(merged?.editedKeys == Int(coverOnly))
+    }
+
+    @Test func newerFieldEditOverridesOlderResetTombstone() {
+        let titleBit = EditedKeys.title.rawValue
+
+        // Local device reset title earlier at t=1_000.
+        let local = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(1_000),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: titleBit,
+                        updatedAt: SyncTestFixtures.date(1_000),
+                        isReset: true
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(1_000))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Source Default Title",
+                        editedKeys: 0
+                    )
+                ]
+            )
+        )
+
+        // Remote device subsequently edited title again at t=3_000.
+        let remote = SyncEnvelope(
+            revision: 2,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(3_000),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: titleBit,
+                        updatedAt: SyncTestFixtures.date(3_000),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(3_000))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "New Custom Title",
+                        editedKeys: Int(titleBit)
+                    )
+                ]
+            )
+        )
+
+        let result = SyncMerger.merge(
+            local: local,
+            remote: remote,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(4_000)
+        )
+
+        let merged = result.mergedEnvelope.backup.manga?.first
+        #expect(merged?.title == "New Custom Title")
+        #expect(merged?.editedKeys == Int(titleBit))
+    }
+
+    @Test func concurrentFieldEditsAcrossDevicesMergeBothEditedFields() {
+        let local = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(2_500),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.title.rawValue,
+                        updatedAt: SyncTestFixtures.date(2_500),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(2_500))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Custom Title",
+                        author: "Source Author",
+                        editedKeys: Int(EditedKeys.title.rawValue)
+                    )
+                ]
+            )
+        )
+
+        let remote = SyncEnvelope(
+            revision: 2,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(2_800),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.authors.rawValue,
+                        updatedAt: SyncTestFixtures.date(2_800),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(2_800))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Source Title",
+                        author: "Kanehito Yamada",
+                        editedKeys: Int(EditedKeys.authors.rawValue)
+                    )
+                ]
+            )
+        )
+
+        let result = SyncMerger.merge(
+            local: local,
+            remote: remote,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(3_000)
+        )
+
+        let merged = result.mergedEnvelope.backup.manga?.first
+        #expect(merged?.title == "Custom Title")
+        #expect(merged?.author == "Kanehito Yamada")
+        #expect(merged?.editedKeys == Int(EditedKeys.title.union(.authors).rawValue))
+    }
+
+    @Test func legacySyncTombstonesJsonDecodesEmptyMangaFieldUpdates() throws {
+        let json = """
+        {
+          "libraryManga": [],
+          "history": [],
+          "mangaHistory": [],
+          "categories": [],
+          "tracks": []
+        }
+        """
+        let decoded = try JSONDecoder().decode(SyncTombstones.self, from: Data(json.utf8))
+        #expect(decoded.mangaFieldUpdates.isEmpty)
+        #expect(decoded.isEmpty)
+    }
+
+    @Test func preservesUnknownUpstreamEditedKeysBitsAcrossMerges() {
+        let unknownUpstreamBit = EditedKeys(rawValue: 1 << 15)
+        let localEdited = EditedKeys.title.union(unknownUpstreamBit).rawValue
+        let remoteEdited = EditedKeys.cover.rawValue
+
+        let local = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: SyncTestFixtures.date(2_000),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.title.rawValue,
+                        updatedAt: SyncTestFixtures.date(2_000),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(2_000))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Custom Title",
+                        cover: "https://source.example/old.jpg",
+                        editedKeys: Int(localEdited)
+                    )
+                ]
+            )
+        )
+
+        let remote = SyncEnvelope(
+            revision: 2,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: SyncTestFixtures.date(2_500),
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: EditedKeys.cover.rawValue,
+                        updatedAt: SyncTestFixtures.date(2_500),
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: SyncTestFixtures.date(2_500))],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Source Title",
+                        cover: "https://images.mangabaka.dev/custom.jpg",
+                        editedKeys: Int(remoteEdited)
+                    )
+                ]
+            )
+        )
+
+        let forward = SyncMerger.merge(
+            local: local,
+            remote: remote,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(3_000)
+        )
+        let reverse = SyncMerger.merge(
+            local: remote,
+            remote: local,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(3_000)
+        )
+
+        let expectedBits = EditedKeys.title.union(.cover).union(unknownUpstreamBit).rawValue
+        #expect(forward.mergedEnvelope.backup.manga?.first?.editedKeys == Int(expectedBits))
+        #expect(reverse.mergedEnvelope.backup.manga?.first?.editedKeys == Int(expectedBits))
+    }
+
+    @Test func prunesExpiredMangaFieldUpdatesByTTL() {
+        let now = SyncTestFixtures.date(10_000_000)
+        let cutoff = now.addingTimeInterval(-SyncMerger.defaultTombstoneTTL)
+        let expired = SyncMangaFieldUpdate(
+            sourceId: "mangadex",
+            mangaId: "m1",
+            fieldBit: EditedKeys.title.rawValue,
+            updatedAt: cutoff.addingTimeInterval(-1),
+            isReset: true
+        )
+        let boundary = SyncMangaFieldUpdate(
+            sourceId: "mangadex",
+            mangaId: "m1",
+            fieldBit: EditedKeys.authors.rawValue,
+            updatedAt: cutoff,
+            isReset: false
+        )
+        let recent = SyncMangaFieldUpdate(
+            sourceId: "mangadex",
+            mangaId: "m1",
+            fieldBit: EditedKeys.cover.rawValue,
+            updatedAt: cutoff.addingTimeInterval(60),
+            isReset: false
+        )
+
+        let pruned = SyncMerger.pruneTombstones(
+            SyncTombstones(mangaFieldUpdates: [expired, boundary, recent]),
+            olderThan: cutoff
+        )
+        #expect(pruned.mangaFieldUpdates == [boundary, recent])
+    }
+
+    @Test func equalTimestampFieldUpdateTieBreakFavorsEditOverReset() {
+        let titleBit = EditedKeys.title.rawValue
+        let timestamp = SyncTestFixtures.date(3_000)
+
+        let editSide = SyncEnvelope(
+            revision: 2,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            updatedAt: timestamp,
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: titleBit,
+                        updatedAt: timestamp,
+                        isReset: false
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: timestamp)],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Custom Title",
+                        editedKeys: Int(titleBit)
+                    )
+                ]
+            )
+        )
+
+        let resetSide = SyncEnvelope(
+            revision: 2,
+            deviceId: "ipad",
+            deviceName: "iPad",
+            updatedAt: timestamp,
+            tombstones: SyncTombstones(
+                mangaFieldUpdates: [
+                    SyncMangaFieldUpdate(
+                        sourceId: "mangadex",
+                        mangaId: "m1",
+                        fieldBit: titleBit,
+                        updatedAt: timestamp,
+                        isReset: true
+                    )
+                ]
+            ),
+            backup: SyncTestFixtures.makeBackup(
+                library: [SyncTestFixtures.makeLibraryManga(mangaId: "m1", lastUpdated: timestamp)],
+                manga: [
+                    SyncTestFixtures.makeManga(
+                        id: "m1",
+                        title: "Source Title",
+                        editedKeys: 0
+                    )
+                ]
+            )
+        )
+
+        let editLocal = SyncMerger.merge(
+            local: editSide,
+            remote: resetSide,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(4_000)
+        )
+        let resetLocal = SyncMerger.merge(
+            local: resetSide,
+            remote: editSide,
+            deviceId: "iphone",
+            deviceName: "iPhone",
+            now: SyncTestFixtures.date(4_000)
+        )
+
+        #expect(editLocal.mergedEnvelope.backup.manga?.first?.title == "Custom Title")
+        #expect(editLocal.mergedEnvelope.backup.manga?.first?.editedKeys == Int(titleBit))
+        #expect(resetLocal.mergedEnvelope.backup.manga?.first?.title == "Custom Title")
+        #expect(resetLocal.mergedEnvelope.backup.manga?.first?.editedKeys == Int(titleBit))
+    }
+
+    @Test func tombstoneStoreRecordMangaFieldUpdatesPrefersEditedOverReset() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SyncTombstoneFieldTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fixedDate = SyncTestFixtures.date(5_000)
+        let store = SyncTombstoneStore(
+            fileURL: tempDir.appendingPathComponent("sync_tombstones.json"),
+            nowProvider: { fixedDate },
+            recordingEnabledProvider: { true }
+        )
+        let mangaId = MangaIdentifier(sourceKey: "mangadex", mangaKey: "frieren")
+
+        store.recordMangaFieldUpdates(
+            mangaId: mangaId,
+            editedBits: [.title, .cover],
+            resetBits: [.title, .description]
+        )
+
+        let snapshot = store.snapshot()
+        #expect(snapshot.hasPendingChanges)
+        #expect(snapshot.tombstones.mangaDetailsUpdates.count == 1)
+        #expect(snapshot.tombstones.mangaDetailsUpdates.first?.mangaIdentifier == mangaId)
+
+        let byBit = Dictionary(uniqueKeysWithValues: snapshot.tombstones.mangaFieldUpdates.map { ($0.fieldBit, $0) })
+        #expect(byBit[EditedKeys.title.rawValue]?.isReset == false)
+        #expect(byBit[EditedKeys.cover.rawValue]?.isReset == false)
+        #expect(byBit[EditedKeys.description.rawValue]?.isReset == true)
+    }
+}

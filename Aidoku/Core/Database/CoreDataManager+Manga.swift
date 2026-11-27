@@ -111,6 +111,12 @@ extension CoreDataManager {
             object.editedKeys = editedKeys.rawValue
             do {
                 try context.save()
+                // Fork: Record cover metadata update for PocketBase sync
+                SyncTombstoneStore.shared.recordMangaFieldUpdates(
+                    mangaId: mangaId,
+                    editedBits: original ? [] : [.cover],
+                    resetBits: original ? [.cover] : []
+                )
                 return originalCover
             } catch {
                 LogManager.logger.error("CoreDataManager.setCover: \(error.localizedDescription)")

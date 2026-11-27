@@ -19,6 +19,8 @@ struct MangaView: View {
     @State private var selectedChapters = Set<String>()
 
     @State private var showingCoverView = false
+    // Fork: Present manual metadata editor sheet
+    @State private var showingEditMetadata = false
     @State private var showRemoveAllConfirm = false
     @State private var showRemoveSelectedConfirm = false
     @State private var showConnectionAlert = false
@@ -175,6 +177,13 @@ struct MangaView: View {
                     manga: viewModel.manga
                 )
                 .navigationTransitionZoom(sourceID: viewModel.manga.identifier, in: transitionNamespace)
+            }
+            // Fork: Metadata editor sheet
+            .sheet(isPresented: $showingEditMetadata) {
+                EditMetadataView(
+                    source: viewModel.source,
+                    manga: viewModel.manga
+                )
             }
             .task {
                 guard !detailsLoaded else { return }
@@ -583,6 +592,9 @@ extension MangaView {
                     )
                 )
             },
+            editMetadata: {
+                showingEditMetadata = true
+            },
             migrate: {
                 let migrateView = MigrateSelectDestinationView(
                     selectedSeries: [viewModel.manga],
@@ -881,6 +893,7 @@ private struct ChapterCellView<T: View>: View, Equatable {
 
 private struct RightNavbarButton: View, Equatable {
     private let bookmarked: Bool
+    private let isLocal: Bool
     private let hasCategories: Bool
     private let url: URL?
     private let hasDownloads: Bool
@@ -893,6 +906,7 @@ private struct RightNavbarButton: View, Equatable {
     let downloadAll: () -> Void
     let downloadUnread: (Int?) -> Void
     let editCategories: () -> Void
+    let editMetadata: () -> Void
     let migrate: () -> Void
     let showShareSheet: (URL) -> Void
     let removeDownloads: () -> Void
@@ -907,12 +921,14 @@ private struct RightNavbarButton: View, Equatable {
         downloadAll: @escaping () -> Void,
         downloadUnread: @escaping (Int?) -> Void,
         editCategories: @escaping () -> Void,
+        editMetadata: @escaping () -> Void,
         migrate: @escaping () -> Void,
         showShareSheet: @escaping (URL) -> Void,
         removeDownloads: @escaping () -> Void,
         editMode: Binding<EditMode>
     ) {
         self.bookmarked = viewModel.bookmarked
+        self.isLocal = viewModel.manga.isLocal()
         self.hasCategories = viewModel.hasCategories
         self.url = viewModel.manga.url
         self.hasDownloads = viewModel.downloadStatus.contains(where: { $0.value == .finished || $0.value == .failed })
@@ -926,6 +942,7 @@ private struct RightNavbarButton: View, Equatable {
         self.downloadAll = downloadAll
         self.downloadUnread = downloadUnread
         self.editCategories = editCategories
+        self.editMetadata = editMetadata
         self.migrate = migrate
         self.showShareSheet = showShareSheet
         self.removeDownloads = removeDownloads
@@ -995,6 +1012,12 @@ private struct RightNavbarButton: View, Equatable {
                                 Label(NSLocalizedString("EDIT_CATEGORIES"), systemImage: "folder.badge.gearshape")
                             }
                         }
+                        // Fork: Edit metadata entry point
+                        Button {
+                            editMetadata()
+                        } label: {
+                            Label(ForkL10n.string("METADATA_EDIT_TITLE"), systemImage: "pencil")
+                        }
                         Button {
                             migrate()
                         } label: {
@@ -1008,6 +1031,13 @@ private struct RightNavbarButton: View, Equatable {
                             } label: {
                                 Label(NSLocalizedString("REFRESH_DETAILS"), systemImage: "arrow.clockwise")
                             }
+                        }
+                    } else if isLocal {
+                        // Fork: Edit metadata entry point for unbookmarked local manga
+                        Button {
+                            editMetadata()
+                        } label: {
+                            Label(ForkL10n.string("METADATA_EDIT_TITLE"), systemImage: "pencil")
                         }
                     }
                 }
@@ -1039,6 +1069,7 @@ private struct RightNavbarButton: View, Equatable {
 
     static nonisolated func == (lhs: RightNavbarButton, rhs: RightNavbarButton) -> Bool {
         lhs.bookmarked == rhs.bookmarked
+            && lhs.isLocal == rhs.isLocal
             && lhs.hasCategories == rhs.hasCategories
             && lhs.url == rhs.url
             && lhs.hasDownloads == rhs.hasDownloads

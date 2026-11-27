@@ -7,7 +7,8 @@
 
 import Foundation
 
-struct EditedKeys: OptionSet {
+// Fork: Conformance to Hashable and Sendable for metadata sync/editing helpers
+struct EditedKeys: OptionSet, Hashable, Sendable {
     let rawValue: Int32
 
     static let title = Self(rawValue: 1 << 0)
@@ -21,4 +22,21 @@ struct EditedKeys: OptionSet {
     static let contentRating = Self(rawValue: 1 << 8)
     static let viewer = Self(rawValue: 1 << 9)
     static let neverUpdate = Self(rawValue: 1 << 10)
+}
+
+// MARK: - Fork: Known bitflags for deterministic sync field tracking
+extension EditedKeys {
+    static let allMetadataBitFlags: [EditedKeys] = [
+        .title,
+        .authors,
+        .artists,
+        .description,
+        .tags,
+        .cover,
+        .url,
+        .status,
+        .contentRating,
+        .viewer,
+        .neverUpdate
+    ]
 }

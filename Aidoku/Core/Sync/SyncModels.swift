@@ -158,6 +158,44 @@ struct SyncMangaCategoryUpdate: Codable, Hashable, Sendable {
     }
 }
 
+struct SyncMangaFieldKey: Hashable, Sendable {
+    let sourceId: String
+    let mangaId: String
+    let fieldBit: Int32
+}
+
+struct SyncMangaFieldUpdate: Codable, Hashable, Sendable {
+    var sourceId: String
+    var mangaId: String
+    var fieldBit: Int32
+    var updatedAt: Date
+    var isReset: Bool
+
+    var mangaIdentifier: MangaIdentifier {
+        .init(sourceKey: sourceId, mangaKey: mangaId)
+    }
+
+    var fieldKey: SyncMangaFieldKey {
+        .init(sourceId: sourceId, mangaId: mangaId, fieldBit: fieldBit)
+    }
+
+    init(sourceId: String, mangaId: String, fieldBit: Int32, updatedAt: Date, isReset: Bool) {
+        self.sourceId = sourceId
+        self.mangaId = mangaId
+        self.fieldBit = fieldBit
+        self.updatedAt = updatedAt
+        self.isReset = isReset
+    }
+
+    init(mangaId: MangaIdentifier, fieldBit: Int32, updatedAt: Date, isReset: Bool) {
+        self.sourceId = mangaId.sourceKey
+        self.mangaId = mangaId.mangaKey
+        self.fieldBit = fieldBit
+        self.updatedAt = updatedAt
+        self.isReset = isReset
+    }
+}
+
 struct SyncTombstones: Codable, Equatable, Sendable {
     var libraryManga: [SyncMangaTombstone]
     var history: [SyncHistoryTombstone]
@@ -169,6 +207,7 @@ struct SyncTombstones: Codable, Equatable, Sendable {
     var trackUpserts: [SyncTrackUpsert]
     var mangaCategoryUpdates: [SyncMangaCategoryUpdate]
     var mangaDetailsUpdates: [SyncMangaCategoryUpdate]
+    var mangaFieldUpdates: [SyncMangaFieldUpdate]
 
     static let empty = SyncTombstones(
         libraryManga: [],
@@ -180,7 +219,8 @@ struct SyncTombstones: Codable, Equatable, Sendable {
         categoryUpserts: [],
         trackUpserts: [],
         mangaCategoryUpdates: [],
-        mangaDetailsUpdates: []
+        mangaDetailsUpdates: [],
+        mangaFieldUpdates: []
     )
 
     init(
@@ -193,7 +233,8 @@ struct SyncTombstones: Codable, Equatable, Sendable {
         categoryUpserts: [SyncCategoryUpsert] = [],
         trackUpserts: [SyncTrackUpsert] = [],
         mangaCategoryUpdates: [SyncMangaCategoryUpdate] = [],
-        mangaDetailsUpdates: [SyncMangaCategoryUpdate] = []
+        mangaDetailsUpdates: [SyncMangaCategoryUpdate] = [],
+        mangaFieldUpdates: [SyncMangaFieldUpdate] = []
     ) {
         self.libraryManga = libraryManga
         self.history = history
@@ -205,6 +246,7 @@ struct SyncTombstones: Codable, Equatable, Sendable {
         self.trackUpserts = trackUpserts
         self.mangaCategoryUpdates = mangaCategoryUpdates
         self.mangaDetailsUpdates = mangaDetailsUpdates
+        self.mangaFieldUpdates = mangaFieldUpdates
     }
 
     init(from decoder: Decoder) throws {
@@ -219,6 +261,7 @@ struct SyncTombstones: Codable, Equatable, Sendable {
         trackUpserts = try container.decodeIfPresent([SyncTrackUpsert].self, forKey: .trackUpserts) ?? []
         mangaCategoryUpdates = try container.decodeIfPresent([SyncMangaCategoryUpdate].self, forKey: .mangaCategoryUpdates) ?? []
         mangaDetailsUpdates = try container.decodeIfPresent([SyncMangaCategoryUpdate].self, forKey: .mangaDetailsUpdates) ?? []
+        mangaFieldUpdates = try container.decodeIfPresent([SyncMangaFieldUpdate].self, forKey: .mangaFieldUpdates) ?? []
     }
 
     var isEmpty: Bool {
@@ -232,6 +275,7 @@ struct SyncTombstones: Codable, Equatable, Sendable {
             && trackUpserts.isEmpty
             && mangaCategoryUpdates.isEmpty
             && mangaDetailsUpdates.isEmpty
+            && mangaFieldUpdates.isEmpty
     }
 
     func canonicalized() -> SyncTombstones {
@@ -254,8 +298,27 @@ struct SyncTombstones: Codable, Equatable, Sendable {
             mangaCategoryUpdates: Self.deduplicatedMaxDate(mangaCategoryUpdates, key: \.mangaIdentifier, date: \.updatedAt)
                 .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) },
             mangaDetailsUpdates: Self.deduplicatedMaxDate(mangaDetailsUpdates, key: \.mangaIdentifier, date: \.updatedAt)
-                .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) }
+                .sorted { ($0.sourceId, $0.mangaId) < ($1.sourceId, $1.mangaId) },
+            mangaFieldUpdates: Self.deduplicatedFieldUpdates(mangaFieldUpdates)
+                .sorted { ($0.sourceId, $0.mangaId, $0.fieldBit) < ($1.sourceId, $1.mangaId, $1.fieldBit) }
         )
+    }
+
+    private static func deduplicatedFieldUpdates(_ items: [SyncMangaFieldUpdate]) -> [SyncMangaFieldUpdate] {
+        var map: [SyncMangaFieldKey: SyncMangaFieldUpdate] = [:]
+        for item in items {
+            let key = item.fieldKey
+            if let existing = map[key] {
+                if existing.updatedAt > item.updatedAt {
+                    continue
+                }
+                if existing.updatedAt == item.updatedAt && !existing.isReset && item.isReset {
+                    continue
+                }
+            }
+            map[key] = item
+        }
+        return Array(map.values)
     }
 
     private static func deduplicatedMaxDate<T, K: Hashable>(
