@@ -1,8 +1,11 @@
 """Generate or update the SideStore/AltStore source JSON for Kodoku releases."""
 
+from __future__ import annotations
+
 import argparse
 import copy
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import plistlib
@@ -11,6 +14,15 @@ import zipfile
 
 
 DEFAULT_MIN_OS_VERSION = "15.0"
+
+
+def compute_sha256(file_path: str) -> str:
+    """Compute lowercase hexadecimal SHA-256 digest for a file."""
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def read_ipa_metadata(ipa_path: str) -> dict:
@@ -60,6 +72,7 @@ def markdown_to_plain_text(text: str) -> str:
         return ""
 
     text = text.replace("\r\n", "\n")
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\(<?([^)>\s]+)>?\)", r"\1 (\2)", text)
     text = re.sub(r"<(https?://[^>\s]+)>", r"\1", text)
     text = re.sub(r"<[^<>]+?>", "", text)
@@ -91,19 +104,34 @@ def normalize_iso_date(date_str: str) -> str:
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def parse_sort_timestamp(date_str: str) -> datetime:
+    """Parse an ISO date or timestamp into UTC datetime for descending sorting."""
+    cleaned = (date_str or "").strip()
+    if not cleaned:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def build_version_entry(
     metadata: dict,
     download_url: str,
     size: int,
     date_str: str,
     notes: str = "",
+    sha256: str | None = None,
 ) -> dict:
     """Build an AltStore/SideStore v2 version entry dictionary."""
     plain_notes = markdown_to_plain_text(notes)
     if not plain_notes:
         plain_notes = f"Kodoku {metadata['version']} (build {metadata['buildVersion']})"
 
-    return {
+    entry = {
         "version": metadata["version"],
         "buildVersion": metadata["buildVersion"],
         "date": normalize_iso_date(date_str),
@@ -112,6 +140,9 @@ def build_version_entry(
         "size": int(size),
         "minOSVersion": metadata["minOSVersion"],
     }
+    if sha256:
+        entry["sha256"] = sha256
+    return entry
 
 
 def merge_source_json(
@@ -157,8 +188,19 @@ def merge_source_json(
         for item in prior_versions
         if (item.get("version"), item.get("buildVersion"))
         != (version_entry["version"], version_entry["buildVersion"])
+        and item.get("downloadURL") != version_entry["downloadURL"]
     ]
-    app["versions"] = [version_entry] + filtered_versions
+    tagged_versions = [(0, version_entry)] + [
+        (index + 1, item) for index, item in enumerate(filtered_versions)
+    ]
+    tagged_versions.sort(
+        key=lambda pair: (
+            parse_sort_timestamp(str(pair[1].get("date") or "")),
+            -pair[0],
+        ),
+        reverse=True,
+    )
+    app["versions"] = [item for _, item in tagged_versions]
     return merged
 
 
@@ -211,12 +253,14 @@ def main(argv: list[str] | None = None) -> int:
 
     metadata = read_ipa_metadata(args.ipa)
     ipa_size = args.size if args.size is not None else os.path.getsize(args.ipa)
+    ipa_sha256 = compute_sha256(args.ipa)
     version_entry = build_version_entry(
         metadata=metadata,
         download_url=args.download_url,
         size=ipa_size,
         date_str=args.date,
         notes=notes,
+        sha256=ipa_sha256,
     )
     updated = merge_source_json(
         template_data=template_data,

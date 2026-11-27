@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run SideStore source unit tests
-        run: python3 -m unittest discover -s .github/workflows/supporting/fork -p "test_*.py" -v
+        run: python3 -B -m unittest discover -s .github/workflows/supporting/fork -p "test_*.py" -v
 
       - name: Resolve and validate build number
         id: build_num
@@ -118,7 +118,7 @@ jobs:
           else:
               release_tag = f"v{marketing_version}-kodoku.{os.environ['EXPECTED_BUILD_NUMBER']}"
 
-          if not re.fullmatch(r"[A-Za-z0-9._-]+", release_tag):
+          if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", release_tag):
               raise ValueError(f"Invalid release tag: {release_tag!r}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
@@ -163,8 +163,8 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
           IPA_NAME: ${{ needs.build-ipa.outputs.ipa_name }}
           INPUT_RELEASE_NOTES: ${{ inputs.release_notes }}
@@ -180,28 +180,28 @@ jobs:
             printf '%s\n' "$INPUT_RELEASE_NOTES" > "$NOTES_FILE"
           fi
 
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$IPA_NAME" --repo "$GITHUB_REPOSITORY" --clobber
+          if gh release view "$RELEASE_TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$IPA_NAME" --repo "$REPO" --clobber
             if [ -n "$NOTES_FILE" ]; then
-              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES_FILE"
+              gh release edit "$RELEASE_TAG" --repo "$REPO" --notes-file "$NOTES_FILE"
             fi
           else
             if [ -n "$NOTES_FILE" ]; then
               gh release create "$RELEASE_TAG" "$IPA_NAME" \
-                --repo "$GITHUB_REPOSITORY" \
-                --target "$GITHUB_SHA" \
+                --repo "$REPO" \
+                --target "$TARGET_SHA" \
                 --title "Kodoku $RELEASE_TAG" \
                 --notes-file "$NOTES_FILE"
             else
               gh release create "$RELEASE_TAG" "$IPA_NAME" \
-                --repo "$GITHUB_REPOSITORY" \
-                --target "$GITHUB_SHA" \
+                --repo "$REPO" \
+                --target "$TARGET_SHA" \
                 --title "Kodoku $RELEASE_TAG" \
                 --generate-notes
             fi
           fi
 
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > release_metadata.json
+          gh api "repos/${REPO}/releases/tags/${RELEASE_TAG}" > release_metadata.json
           python3 - <<'PY'
           import json, os
 
@@ -212,17 +212,16 @@ jobs:
           assets = rel.get("assets", [])
           asset = next((a for a in assets if a.get("name") == ipa_name), None)
           if not asset:
-              asset = next((a for a in assets if a.get("name", "").endswith(".ipa")), None)
-          if not asset:
-              raise RuntimeError("No .ipa asset found in published GitHub release")
+              raise RuntimeError(f"Expected IPA asset {ipa_name!r} not found in published GitHub release")
 
           with open("release_body.md", "w", encoding="utf-8") as bf:
               bf.write(rel.get("body") or "")
 
+          published_at = asset.get("updated_at") or rel["published_at"]
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"download_url={asset['browser_download_url']}\n")
               out.write(f"size={asset['size']}\n")
-              out.write(f"published_at={rel['published_at']}\n")
+              out.write(f"published_at={published_at}\n")
               out.write(f"release_url={rel['html_url']}\n")
           PY
 
@@ -235,13 +234,19 @@ jobs:
           RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
         run: |
           ALTSTORE_DIR="$(mktemp -d)"
+          trap 'git worktree remove --force "$ALTSTORE_DIR" >/dev/null 2>&1 || rm -rf "$ALTSTORE_DIR"' EXIT
+
           if git ls-remote --exit-code --heads origin altstore >/dev/null 2>&1; then
             git fetch --depth=1 origin altstore
             git worktree add --detach "$ALTSTORE_DIR" FETCH_HEAD
           else
             git worktree add --detach "$ALTSTORE_DIR" HEAD
             git -C "$ALTSTORE_DIR" checkout --orphan altstore
-            git -C "$ALTSTORE_DIR" rm -rf . >/dev/null 2>&1 || true
+            git -C "$ALTSTORE_DIR" rm -rf --ignore-unmatch . >/dev/null
+            if [ -n "$(git -C "$ALTSTORE_DIR" ls-files)" ]; then
+              echo "::error::Failed to clean orphan altstore worktree."
+              exit 1
+            fi
           fi
 
           EXISTING_ARG=""
@@ -249,7 +254,7 @@ jobs:
             EXISTING_ARG="${ALTSTORE_DIR}/apps.json"
           fi
 
-          python3 .github/workflows/supporting/fork/update_sidestore_source.py \
+          python3 -B .github/workflows/supporting/fork/update_sidestore_source.py \
             --template .github/workflows/supporting/fork/apps.json \
             --existing "$EXISTING_ARG" \
             --ipa "$IPA_NAME" \
@@ -273,7 +278,7 @@ jobs:
 
       - name: Write workflow summary
         env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.build-ipa.outputs.release_tag }}
           RELEASE_URL: ${{ steps.release.outputs.release_url }}
           DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
@@ -282,5 +287,5 @@ jobs:
             echo "## Kodoku Release Published (${RELEASE_TAG})"
             echo "- **GitHub Release**: ${RELEASE_URL}"
             echo "- **IPA Asset**: ${DOWNLOAD_URL}"
-            echo "- **SideStore / AltStore Source URL**: \`https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/altstore/apps.json\`"
+            echo "- **SideStore / AltStore Source URL**: \`https://raw.githubusercontent.com/${REPO}/altstore/apps.json\`"
           } >> "$GITHUB_STEP_SUMMARY"

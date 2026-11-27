@@ -3,7 +3,7 @@
   "identifier": "io.github.sfai05.kodoku.source",
   "sourceURL": "https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json",
   "subtitle": "SideStore & AltStore source for Kodoku (free Apple ID fork of Aidoku)",
-  "description": "Official SideStore and AltStore source for Kodoku, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
+  "description": "SideStore and AltStore source for Kodoku, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
   "website": "https://github.com/sfai05/Aidoku",
   "iconURL": "https://raw.githubusercontent.com/sfai05/Aidoku/main/Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png",
   "tintColor": "1F6BFF",

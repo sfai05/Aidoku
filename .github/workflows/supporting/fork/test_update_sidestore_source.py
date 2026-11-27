@@ -1,5 +1,8 @@
 """Unit tests for update_sidestore_source.py and the fork apps.json template."""
 
+from __future__ import annotations
+
+import hashlib
 import json
 import os
 import plistlib
@@ -73,6 +76,7 @@ class TestUpdateSideStoreSource(unittest.TestCase):
         self.assertIn("NSFaceIDUsageDescription", app["appPermissions"]["privacy"])
         self.assertIn("NSPhotoLibraryUsageDescription", app["appPermissions"]["privacy"])
         self.assertIn("NSLocalNetworkUsageDescription", app["appPermissions"]["privacy"])
+        self.assertNotIn("Official", data["description"])
 
     def test_read_ipa_metadata_valid(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -101,15 +105,24 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             with self.assertRaises(ValueError):
                 updater.read_ipa_metadata(ipa_path)
 
-    def test_markdown_to_plain_text(self) -> None:
-        raw = "## What's New\n- Added **blue** icon (`#1F6BFF`)\n- See [Release](https://github.com/sfai05/Aidoku)\n"
+    def test_markdown_to_plain_text_and_images(self) -> None:
+        raw = (
+            "## What's New\n"
+            "![Build Status](https://img.shields.io/badge/build-passing-blue)\n"
+            "- Added **blue** icon (`#1F6BFF`)\n"
+            "- See [Release](https://github.com/sfai05/Aidoku)\n"
+        )
         plain = updater.markdown_to_plain_text(raw)
         self.assertEqual(
             plain,
-            "What's New\n• Added blue icon (\"#1F6BFF\")\n• See Release (https://github.com/sfai05/Aidoku)",
+            "What's New\n"
+            "Build Status\n"
+            "• Added blue icon (\"#1F6BFF\")\n"
+            "• See Release (https://github.com/sfai05/Aidoku)",
         )
+        self.assertNotIn("!", plain)
 
-    def test_merge_initial_history_and_idempotent_dedup(self) -> None:
+    def test_merge_history_dedup_clobbered_url_and_date_sort(self) -> None:
         with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
             template = json.load(f)
 
@@ -118,7 +131,7 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             "buildVersion": "101",
             "date": "2026-11-27T12:00:00Z",
             "localizedDescription": "Initial release",
-            "downloadURL": "https://example.com/Kodoku-101.ipa",
+            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.101.ipa",
             "size": 12345,
             "minOSVersion": "15.0",
         }
@@ -126,15 +139,14 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             template, None, v1, "io.github.sfai05.Kodoku"
         )
         self.assertEqual(len(first["apps"][0]["versions"]), 1)
-        self.assertEqual(first["apps"][0]["versions"][0]["buildVersion"], "101")
 
-        # Simulate older history plus re-running v2
+        # Simulate newer release and older backfilled release -> sorted descending by date
         v2 = {
             "version": "0.9",
             "buildVersion": "102",
             "date": "2026-11-28T09:00:00Z",
             "localizedDescription": "Updated release",
-            "downloadURL": "https://example.com/Kodoku-102.ipa",
+            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.102.ipa",
             "size": 23456,
             "minOSVersion": "15.0",
         }
@@ -146,18 +158,41 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             ["102", "101"],
         )
 
-        # Idempotent replacement when (version, buildVersion) already exists
-        v2_rebuilt = dict(v2, localizedDescription="Edited release notes")
+        # Re-running same tag (clobbered downloadURL with newer buildVersion 103)
+        # must replace stale build 102 entry sharing that downloadURL.
+        v2_clobbered = {
+            "version": "0.9",
+            "buildVersion": "103",
+            "date": "2026-11-29T10:00:00Z",
+            "localizedDescription": "Re-built release",
+            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.102.ipa",
+            "size": 24000,
+            "minOSVersion": "15.0",
+        }
         third = updater.merge_source_json(
-            template, second, v2_rebuilt, "io.github.sfai05.Kodoku"
+            template, second, v2_clobbered, "io.github.sfai05.Kodoku"
         )
         self.assertEqual(
             [v["buildVersion"] for v in third["apps"][0]["versions"]],
-            ["102", "101"],
+            ["103", "101"],
+        )
+
+        # Adding an older-dated entry still keeps chronological descending order
+        older = {
+            "version": "0.9",
+            "buildVersion": "100",
+            "date": "2026-11-26T08:00:00Z",
+            "localizedDescription": "Older release",
+            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.100.ipa",
+            "size": 11111,
+            "minOSVersion": "15.0",
+        }
+        fourth = updater.merge_source_json(
+            template, third, older, "io.github.sfai05.Kodoku"
         )
         self.assertEqual(
-            third["apps"][0]["versions"][0]["localizedDescription"],
-            "Edited release notes",
+            [v["buildVersion"] for v in fourth["apps"][0]["versions"]],
+            ["103", "101", "100"],
         )
 
     def test_merge_bundle_id_mismatch_raises(self) -> None:
@@ -176,13 +211,16 @@ class TestUpdateSideStoreSource(unittest.TestCase):
         with self.assertRaises(ValueError):
             updater.merge_source_json(template, None, entry, "app.aidoku.Aidoku")
 
-    def test_cli_end_to_end_with_notes_file(self) -> None:
+    def test_cli_end_to_end_with_notes_file_and_sha256(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             ipa_path = create_synthetic_ipa(tmpdir, build_version="105")
             notes_path = os.path.join(tmpdir, "notes.md")
             out_path = os.path.join(tmpdir, "out", "apps.json")
             with open(notes_path, "w", encoding="utf-8") as f:
                 f.write("### Highlights\n- Works with **SideStore**\n")
+
+            with open(ipa_path, "rb") as f:
+                expected_sha256 = hashlib.sha256(f.read()).hexdigest()
 
             exit_code = updater.main(
                 [
@@ -212,6 +250,8 @@ class TestUpdateSideStoreSource(unittest.TestCase):
                 "Highlights\n• Works with SideStore",
             )
             self.assertEqual(versions[0]["size"], os.path.getsize(ipa_path))
+            self.assertEqual(versions[0]["sha256"], expected_sha256)
+            self.assertEqual(len(versions[0]["sha256"]), 64)
 
 
 if __name__ == "__main__":
