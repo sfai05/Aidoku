@@ -1,0 +1,135 @@
+/*
+  ForkLocalizable.strings (English)
+  Aidoku (Kodoku Fork)
+*/
+
+"SYNC_TITLE" = "PocketBase Sync";
+"SYNC_LOGS_TITLE" = "Sync Logs";
+"SYNC_RECOVERY_TITLE" = "Experimental & Recovery";
+"SYNC_SETUP_WIZARD_TITLE" = "One-Time Setup Wizard";
+"SYNC_MANUAL_SCHEMA_TITLE" = "Manual pb_schema.json Import";
+
+"SYNC_STATUS_SYNCED" = "Synced";
+"SYNC_STATUS_SYNCING" = "Syncing…";
+"SYNC_STATUS_PENDING" = "Pending Local Changes";
+"SYNC_STATUS_ERROR" = "Sync Attention Required";
+"SYNC_STATUS_DISABLED" = "Sync Disabled";
+
+"SYNC_SECTION_STATUS" = "Sync Status";
+"SYNC_ENABLE_TOGGLE" = "Enable PocketBase Sync";
+"SYNC_ENABLE_FOOTER" = "Automatically merges reading history, library, categories, and tracker links via your PocketBase server.";
+"SYNC_SERVER_LABEL" = "Server";
+"SYNC_ACCOUNT_LABEL" = "Account";
+"SYNC_NOT_CONFIGURED" = "Not configured";
+"SYNC_NOT_SIGNED_IN" = "Not signed in";
+"SYNC_LAST_SYNCED_LABEL" = "Last Synced";
+"SYNC_NEVER" = "Never";
+"SYNC_REVISION_LABEL" = "Revision";
+"SYNC_STATS_LIBRARY" = "Library";
+"SYNC_STATS_HISTORY" = "History";
+"SYNC_STATS_CATEGORIES" = "Categories";
+"SYNC_STATS_TRACKERS" = "Trackers";
+"SYNC_STATS_SESSIONS" = "Sessions";
+"SYNC_NOW_BUTTON" = "Sync Now";
+"SYNC_RESULT_FORMAT" = "Sync complete (%@ · rev #%d).";
+"SYNC_ACTION_UP_TO_DATE" = "Up to date";
+"SYNC_ACTION_PULLED" = "Pulled";
+"SYNC_ACTION_PUSHED" = "Pushed";
+"SYNC_ACTION_MERGED" = "Merged";
+"SYNC_ACTION_FORCE_PUSHED" = "Force Pushed";
+"SYNC_ACTION_FORCE_PULLED" = "Force Pulled";
+
+"SYNC_SECTION_CONNECTION" = "Server & Account";
+"SYNC_CONNECTION_FOOTER" = "Daily sync signs in with a regular PocketBase users account. Auth tokens are stored only in iOS Keychain.";
+"SYNC_SERVER_URL_LABEL" = "Server URL";
+"SYNC_SERVER_URL_PLACEHOLDER" = "https://pb.example.com";
+"SYNC_HTTPS_WARNING" = "HTTP works on local LAN or Tailscale, but HTTPS is strongly recommended for public or cloud servers.";
+"SYNC_COLLECTION_NAME_LABEL" = "Collection Name";
+"SYNC_EMAIL_LABEL" = "Email";
+"SYNC_PASSWORD_LABEL" = "Password";
+"SYNC_SIGN_IN_BUTTON" = "Sign In";
+"SYNC_SIGN_IN_SUCCESS" = "Signed in to PocketBase.";
+"SYNC_SAVE_SETTINGS_BUTTON" = "Save Server Settings";
+"SYNC_SETTINGS_SAVED" = "Server settings saved.";
+"SYNC_REFRESH_SESSION_BUTTON" = "Refresh Session";
+"SYNC_SESSION_REFRESHED" = "Auth session refreshed.";
+"SYNC_SIGN_OUT_BUTTON" = "Sign Out";
+"SYNC_SIGN_OUT_CONFIRM_TITLE" = "Sign Out of PocketBase?";
+"SYNC_SIGN_OUT_CONFIRM_MESSAGE" = "This clears your PocketBase auth token from Keychain and disables automatic sync on this device.";
+"SYNC_ENABLE_REQUIREMENT_ERROR" = "Configure a valid server URL and sign in before enabling sync.";
+"SYNC_INVALID_COLLECTION_ERROR" = "Collection name must start with a letter and use only letters, numbers, or underscores.";
+
+"SYNC_SECTION_HEALTH" = "Schema & Health Check";
+"SYNC_CHECK_HEALTH_BUTTON" = "Check Connection & Schema";
+"SYNC_HEALTH_REACHABLE" = "Server Reachable";
+"SYNC_HEALTH_AUTH" = "Authenticated";
+"SYNC_HEALTH_COLLECTION" = "Collection & Rules Ready";
+"SYNC_WIZARD_DESCRIPTION" = "Provision the PocketBase sync collection automatically using one-time Superuser credentials. Admin credentials are kept in memory only and immediately discarded.";
+"SYNC_WIZARD_SUPERUSER_SECTION" = "Transient Superuser Credentials";
+"SYNC_WIZARD_TARGET_SECTION" = "Target Collection";
+"SYNC_WIZARD_CREATE_BUTTON" = "Create or Verify Collection";
+"SYNC_WIZARD_CREATED_FORMAT" = "Created PocketBase collection '%@'.";
+"SYNC_WIZARD_READY_FORMAT" = "Collection '%@' already exists and matches all required fields, indexes, and API rules.";
+"SYNC_WIZARD_ISSUES_HEADER_FORMAT" = "Collection '%@' exists but needs attention:";
+"SYNC_WIZARD_MISSING_FIELD_FORMAT" = "Missing field: %@";
+"SYNC_SCHEMA_STEPS_SECTION" = "PocketBase Admin UI Steps";
+"SYNC_SCHEMA_STEPS_BODY" = "1. Open your PocketBase Admin UI (/_/).\n2. Go to Settings → Import collections.\n3. Paste or load the pb_schema.json content below.\n4. Review and confirm the new collection.";
+"SYNC_COPY_JSON_BUTTON" = "Copy Schema JSON";
+"SYNC_COPIED_FEEDBACK" = "Copied";
+"SYNC_EXPORT_SCHEMA_BUTTON" = "Export pb_schema.json";
+"SYNC_SCHEMA_PREVIEW_SECTION" = "pb_schema.json Preview";
+"SYNC_DONE_BUTTON" = "Done";
+"SYNC_CANCEL_BUTTON" = "Cancel";
+
+"SYNC_SECTION_OPTIONS" = "Sync Options";
+"SYNC_OPTIONS_FOOTER" = "When 'Include Safe App Settings' is enabled, sensitive keys (tokens, logins, passwords, cookies) are stripped before upload.";
+"SYNC_DEVICE_NAME_LABEL" = "Device Name";
+"SYNC_AUTO_FOREGROUND_TOGGLE" = "Auto-Sync on Foreground";
+"SYNC_INCLUDE_SETTINGS_TOGGLE" = "Include Safe App Settings";
+"SYNC_RETENTION_FORMAT" = "Keep %d Remote Snapshots";
+"SYNC_DEBOUNCE_LABEL" = "Auto-Sync Delay";
+"SYNC_SECONDS_FORMAT" = "%d sec";
+
+"SYNC_SECTION_DIAGNOSTICS" = "Diagnostics & Recovery";
+"SYNC_LOGS_FILTER_ALL" = "All";
+"SYNC_LOGS_FILTER_INFO" = "Info";
+"SYNC_LOGS_FILTER_WARNING" = "Warning";
+"SYNC_LOGS_FILTER_ERROR" = "Error";
+"SYNC_LOGS_EMPTY" = "No sync logs recorded yet.";
+"SYNC_LOGS_COPY_BUTTON" = "Copy All";
+"SYNC_LOGS_EXPORT_BUTTON" = "Export Logs";
+"SYNC_LOGS_CLEAR_BUTTON" = "Clear Logs";
+"SYNC_LOGS_CLEAR_CONFIRM_TITLE" = "Clear Sync Logs?";
+"SYNC_LOGS_CLEAR_CONFIRM_MESSAGE" = "This permanently removes local sync diagnostic entries on this device.";
+"SYNC_LOGS_COPIED" = "Sync logs copied to clipboard.";
+
+"SYNC_RECOVERY_WARNING" = "Experimental recovery tools can overwrite local library/history state or publish rollback revisions. Use regular Sync Now unless troubleshooting.";
+"SYNC_RECOVERY_ACTIONS_SECTION" = "Recovery Actions";
+"SYNC_FORCE_SYNC_BUTTON" = "Force Sync (Smart Merge)";
+"SYNC_FORCE_PUSH_BUTTON" = "Force Push (Local → Remote)";
+"SYNC_FORCE_PUSH_TITLE" = "Force Push Local Snapshot?";
+"SYNC_FORCE_PUSH_MESSAGE" = "Uploads this device's current library and history as a higher revision without merging remote changes.";
+"SYNC_FORCE_PULL_LATEST_BUTTON" = "Force Pull Latest (Remote → Local)";
+"SYNC_FORCE_PULL_LATEST_TITLE" = "Force Pull Latest Remote Snapshot?";
+"SYNC_FORCE_PULL_LATEST_MESSAGE" = "Replaces this device's synced library, categories, trackers, and reading history with the latest remote snapshot.";
+"SYNC_SNAPSHOTS_SECTION" = "Remote Snapshots";
+"SYNC_SNAPSHOTS_EMPTY" = "No remote snapshots loaded. Tap Refresh to fetch.";
+"SYNC_SNAPSHOTS_REFRESH_BUTTON" = "Refresh Snapshots";
+"SYNC_SNAPSHOT_ROW_FORMAT" = "Rev #%d · %@";
+"SYNC_FORCE_PULL_SNAPSHOT_TITLE_FORMAT" = "Restore Snapshot #%d?";
+"SYNC_FORCE_PULL_SNAPSHOT_MESSAGE" = "Replaces local data with this historical snapshot and publishes a new head revision. Remember to also run Force Pull on your other devices so older changes are not merged back in.";
+"SYNC_DELETE_SNAPSHOT_TITLE_FORMAT" = "Delete Remote Snapshot #%d?";
+"SYNC_DELETE_SNAPSHOT_MESSAGE" = "Deletes this snapshot record from PocketBase. Your local device data is not changed.";
+"SYNC_DELETE_SNAPSHOT_SUCCESS_FORMAT" = "Deleted remote snapshot #%d.";
+"SYNC_CLEANUP_SNAPSHOTS_BUTTON" = "Clean Up Stale Remote Snapshots";
+"SYNC_CLEANUP_RESULT_FORMAT" = "Removed %d stale remote snapshot(s).";
+"SYNC_SECTION_LOCAL_RESET" = "Local State Reset";
+"SYNC_RESET_CURSOR_BUTTON" = "Reset Local Sync Cursor";
+"SYNC_RESET_CURSOR_TITLE" = "Reset Local Sync Cursor?";
+"SYNC_RESET_CURSOR_MESSAGE" = "Clears local revision cursor and pending tombstones so the next sync performs a fresh merge. Your account remains signed in.";
+"SYNC_RESET_CURSOR_DONE" = "Local sync cursor reset.";
+"SYNC_RESET_ALL_BUTTON" = "Reset Sync State & Sign Out";
+"SYNC_RESET_ALL_TITLE" = "Reset Sync State & Sign Out?";
+"SYNC_RESET_ALL_MESSAGE" = "Clears local sync state, disables sync, and removes PocketBase credentials from Keychain. Your local manga library is kept intact.";
+"SYNC_RESET_ALL_DONE" = "Reset local sync state and signed out.";
+"SYNC_UNKNOWN_SIZE" = "Unknown size";

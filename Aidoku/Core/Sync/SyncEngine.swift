@@ -272,11 +272,22 @@ actor SyncEngine {
 
     func currentStatus() -> SyncStatusSnapshot {
         let hasPending = tombstoneStore.snapshot().hasPendingChanges
+        var effectiveError = lastErrorMessage
+        if configuration.isEnabled, let pbProvider = provider as? PocketBaseSyncProvider {
+            let trimmedServer = configuration.serverURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if effectiveError == nil {
+                if trimmedServer.isEmpty {
+                    effectiveError = SyncError.notConfigured("PocketBase server URL is missing.").localizedDescription
+                } else if pbProvider.currentSession() == nil {
+                    effectiveError = SyncError.notAuthenticated.localizedDescription
+                }
+            }
+        }
         let indicator: SyncIndicator = if !configuration.isEnabled {
             .disabled
         } else if isSyncing {
             .syncing
-        } else if lastErrorMessage != nil {
+        } else if effectiveError != nil {
             .error
         } else if hasPending {
             .pendingChanges
@@ -290,7 +301,7 @@ actor SyncEngine {
             lastSyncedAt: configuration.lastSyncedAt,
             lastSyncedRevision: configuration.lastSyncedRevision,
             hasPendingChanges: hasPending,
-            lastErrorMessage: lastErrorMessage,
+            lastErrorMessage: effectiveError,
             stats: configuration.lastSyncedStats
         )
     }
@@ -335,6 +346,85 @@ actor SyncEngine {
 
     func listRemoteSnapshots(limit: Int = 20) async throws -> [SyncSnapshotMetadata] {
         try await provider.listSnapshots(limit: limit)
+    }
+}
+
+// MARK: - Settings & Auth Facade
+
+extension SyncEngine {
+    nonisolated var pocketBaseProvider: PocketBaseSyncProvider? {
+        provider as? PocketBaseSyncProvider
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        configuration.isEnabled = enabled
+        if !enabled {
+            debounceTask?.cancel()
+            debounceTask = nil
+            pendingFollowUpSync = false
+            lastErrorMessage = nil
+        }
+        postStateChanged()
+    }
+
+    func notifyConfigurationChanged() {
+        postStateChanged()
+    }
+
+    @discardableResult
+    func signIn(serverURL: String, email: String, password: String) async throws -> PocketBaseAuthSession {
+        guard let pbProvider = pocketBaseProvider else {
+            throw SyncError.notConfigured("PocketBase provider is unavailable.")
+        }
+
+        await acquireExclusiveLock()
+        defer {
+            releaseExclusiveLock()
+            postStateChanged()
+        }
+
+        let previousServerURL = configuration.serverURL
+        let previousUserId = pbProvider.currentSession()?.userId
+        let session = try await pbProvider.signIn(serverURL: serverURL, email: email, password: password)
+
+        let switchedServer = previousServerURL != nil && previousServerURL != configuration.serverURL
+        let switchedUser = previousUserId != nil && previousUserId != session.userId
+        if switchedServer || switchedUser {
+            configuration.resetSyncProgress()
+            tombstoneStore.reset()
+            await logStore.log(
+                level: .info,
+                category: "auth",
+                message: "Reset sync cursor after switching PocketBase server or account."
+            )
+        }
+        lastErrorMessage = nil
+        return session
+    }
+
+    func signOut() async {
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingFollowUpSync = false
+
+        await acquireExclusiveLock()
+        defer {
+            releaseExclusiveLock()
+            postStateChanged()
+        }
+
+        try? pocketBaseProvider?.signOut()
+        configuration.isEnabled = false
+        lastErrorMessage = nil
+        await logStore.log(level: .info, category: "auth", message: "Signed out of PocketBase.")
+    }
+
+    func deleteRemoteSnapshot(id: String) async throws {
+        await acquireExclusiveLock()
+        defer { releaseExclusiveLock() }
+
+        try await provider.deleteSnapshot(id: id)
+        await logStore.log(level: .info, category: "cleanup", message: "Deleted remote snapshot \(id).")
     }
 }
 

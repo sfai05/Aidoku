@@ -98,25 +98,14 @@ enum Settings {
                     icon: .system(name: "clock.arrow.2.circlepath", color: "orange", inset: 4)
                 ))
             ),
+            // Fork: Replace iCloud Sync with PocketBase Sync dashboard
             .init(
-                title: NSLocalizedString("ICLOUD_SYNC"),
+                key: "Sync",
+                title: ForkL10n.string("SYNC_TITLE"),
                 value: .page(.init(
-                    items: [
-                        .init(value: .group(.init(items: [
-                            .init(
-                                key: AppSettings.general.icloudSync.key,
-                                title: String(format: NSLocalizedString("%@_EXPERIMENTAL"), NSLocalizedString("ICLOUD_SYNC")),
-                                requires: AppSettings.flags.isiCloudAvailable.key,
-                                value: .toggle(.init())
-                            )
-                        ])))
-                    ],
-                    icon: .system(name: "icloud.fill", color: "blue"),
-                    info: NSLocalizedString(
-                        AppSettings.flags.isSideloaded.get()
-                            ? "ICLOUD_SYNC_TEXT_SIDELOADED"
-                            : "ICLOUD_SYNC_TEXT_EXPERIMENTAL"
-                    )
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "arrow.clockwise.icloud.fill", color: "blue")
                 ))
             ),
             .init(
