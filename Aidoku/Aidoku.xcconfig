@@ -5,14 +5,16 @@
 //  Created by Nikolai Schumacher on 17.05.25.
 //
 
-// base identifiers
-APP_ID_PREFIX               = app.aidoku
-APP_ID_SUFFIX               = Aidoku
+// Fork: Default fork app identity (all overridable in untracked ../Local.xcconfig).
+APP_DISPLAY_NAME                  = Kodoku
+APP_ID_PREFIX                     = io.github.sfai05
+APP_ID_SUFFIX                     = Kodoku
 
-PRODUCT_BUNDLE_IDENTIFIER   = $(APP_ID_PREFIX).$(APP_ID_SUFFIX)
+PRODUCT_BUNDLE_IDENTIFIER         = $(APP_ID_PREFIX).$(APP_ID_SUFFIX)
+INFOPLIST_KEY_CFBundleDisplayName = $(APP_DISPLAY_NAME)
 
 // Fork: Clear upstream DEVELOPMENT_TEAM for free Apple ID / Personal Team builds.
-DEVELOPMENT_TEAM            =
+DEVELOPMENT_TEAM                  =
 
 // Store build
 // Dev / sideload build (leave flag 'CANONICAL_BUILD' undefined)
