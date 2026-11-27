@@ -7,8 +7,6 @@
 | Area | Upstream Aidoku | Kodoku (`sfai05/Aidoku`) |
 |---|---|---|
 | **Signing & Entitlements** | Uses CloudKit, Push Notifications (`aps-environment`), and custom fonts entitlement | Removes paid-developer-only entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity, `user-fonts`, `remote-notification`) so it builds and runs cleanly with a free Apple ID (Personal Team); keeps local notifications and `BGProcessingTask` / `fetch` |
-| **App Identity** | `app.aidoku.Aidoku` (`Aidoku`) | Default `io.github.sfai05.Kodoku` (`Kodoku`), overridable via untracked `Local.xcconfig` |
-| **Distribution** | TestFlight, upstream AltStore source, manual `.ipa` | Automated unsigned `.ipa` GitHub Releases + SideStore / AltStore v2 source feed (`https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json`) via `.github/workflows/fork-release.yml` |
 | **Cross-Device Sync** | `NSPersistentCloudKitContainer` (iCloud / CloudKit) | **PocketBase Sync Engine** (`SyncStorageProvider` + `SyncEnvelope` gzip snapshots with `revision` optimistic locking, SHA-256 verification, tombstones, and non-destructive background smart merge) |
 | **Sync Triggers & Battery** | Black-box iOS CloudKit & APNs scheduling | 60s default change debounce (configurable 5–120s), automatic foreground pull, lock-screen / background `UIBackgroundTask` flush, and disk flush on termination |
 | **Sync UI & Recovery** | Single iCloud Sync toggle | Dedicated **Settings → PocketBase Sync** dashboard (Green/Yellow/Red indicator, counts, setup wizard using transient Superuser credentials or manual `docs/sync/pb_schema.json` import, Keychain-only `users` auth, Sync Logs viewer, Force Sync/Push/Pull, historical snapshot rollback, cleanup, and cursor reset) |
