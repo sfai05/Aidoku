@@ -25,6 +25,9 @@ final class SyncConfiguration: @unchecked Sendable {
         static let autoSyncDebounceSeconds = "\(prefix)autoSyncDebounceSeconds"
         static let lastSyncedStats = "\(prefix)lastSyncedStats"
         static let lastSyncedSettingsDigest = "\(prefix)lastSyncedSettingsDigest"
+        static let lastSyncedServerURL = "\(prefix)lastSyncedServerURL"
+        static let lastSyncedCollectionName = "\(prefix)lastSyncedCollectionName"
+        static let lastSyncedUserId = "\(prefix)lastSyncedUserId"
     }
 
     private let userDefaults: UserDefaults
@@ -198,6 +201,57 @@ final class SyncConfiguration: @unchecked Sendable {
         }
     }
 
+    var lastSyncedServerURL: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return userDefaults.string(forKey: Key.lastSyncedServerURL)
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            if let newValue {
+                userDefaults.set(newValue, forKey: Key.lastSyncedServerURL)
+            } else {
+                userDefaults.removeObject(forKey: Key.lastSyncedServerURL)
+            }
+        }
+    }
+
+    var lastSyncedCollectionName: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return userDefaults.string(forKey: Key.lastSyncedCollectionName)
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            if let newValue {
+                userDefaults.set(newValue, forKey: Key.lastSyncedCollectionName)
+            } else {
+                userDefaults.removeObject(forKey: Key.lastSyncedCollectionName)
+            }
+        }
+    }
+
+    var lastSyncedUserId: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return userDefaults.string(forKey: Key.lastSyncedUserId)
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            if let newValue {
+                userDefaults.set(newValue, forKey: Key.lastSyncedUserId)
+            } else {
+                userDefaults.removeObject(forKey: Key.lastSyncedUserId)
+            }
+        }
+    }
+
     var lastSyncedAt: Date? {
         get {
             lock.lock()
@@ -310,6 +364,9 @@ final class SyncConfiguration: @unchecked Sendable {
         userDefaults.removeObject(forKey: Key.lastSyncedSettingsDigest)
         userDefaults.removeObject(forKey: Key.lastSyncedAt)
         userDefaults.removeObject(forKey: Key.lastSyncedStats)
+        userDefaults.removeObject(forKey: Key.lastSyncedServerURL)
+        userDefaults.removeObject(forKey: Key.lastSyncedCollectionName)
+        userDefaults.removeObject(forKey: Key.lastSyncedUserId)
     }
 
     static func normalizeServerURL(_ raw: String) throws -> URL {

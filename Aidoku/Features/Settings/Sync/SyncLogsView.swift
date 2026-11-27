@@ -155,7 +155,7 @@ struct SyncLogsView: View {
             Text(ForkL10n.string("SYNC_LOGS_CLEAR_CONFIRM_MESSAGE"))
         }
         .sheet(item: $shareItem) { item in
-            SyncShareSheet(items: item.items)
+            SyncShareSheet(items: item.items, cleanupURL: item.cleanupURL)
         }
     }
 
@@ -218,7 +218,7 @@ struct SyncLogsView: View {
         guard let data = text.data(using: .utf8) else { return }
         do {
             try data.write(to: url, options: .atomic)
-            shareItem = SyncShareItem(items: [url])
+            shareItem = SyncShareItem(items: [url], cleanupURL: url)
         } catch {
             UIPasteboard.general.string = text
             statusBanner = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_LOGS_COPIED"))

@@ -13,6 +13,7 @@ struct SyncRecoveryView: View {
         case forcePullLatest
         case forcePullSnapshot(SyncSnapshotMetadata)
         case deleteSnapshot(SyncSnapshotMetadata)
+        case cleanupSnapshots
         case resetCursor
         case resetAll
 
@@ -26,6 +27,8 @@ struct SyncRecoveryView: View {
                     "forcePull-\(meta.id)"
                 case let .deleteSnapshot(meta):
                     "delete-\(meta.id)"
+                case .cleanupSnapshots:
+                    "cleanupSnapshots"
                 case .resetCursor:
                     "resetCursor"
                 case .resetAll:
@@ -116,9 +119,7 @@ struct SyncRecoveryView: View {
                 }
 
                 Button {
-                    Task {
-                        await viewModel.cleanupRemoteSnapshots()
-                    }
+                    confirmation = .cleanupSnapshots
                 } label: {
                     Label(ForkL10n.string("SYNC_CLEANUP_SNAPSHOTS_BUTTON"), systemImage: "trash")
                 }
@@ -174,10 +175,19 @@ struct SyncRecoveryView: View {
             confirmation = .forcePullSnapshot(snapshot)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(ForkL10n.format("SYNC_SNAPSHOT_ROW_FORMAT", snapshot.revision, displayDeviceName(snapshot)))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
+                    if isLatestSnapshot(snapshot) {
+                        Text(ForkL10n.string("SYNC_SNAPSHOT_LATEST_BADGE"))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
                     Spacer()
                     Text(formattedSize(snapshot.sizeBytes))
                         .font(.caption)
@@ -197,6 +207,15 @@ struct SyncRecoveryView: View {
             .padding(.vertical, 2)
         }
         .disabled(!viewModel.isEnabled || viewModel.isBusy)
+    }
+
+    private func isLatestSnapshot(_ snapshot: SyncSnapshotMetadata) -> Bool {
+        guard let headRevision = viewModel.remoteSnapshots.map(\.revision).max() else {
+            return false
+        }
+        return snapshot.revision == headRevision && snapshot.id == viewModel.remoteSnapshots.first(
+            where: { $0.revision == headRevision }
+        )?.id
     }
 
     private func displayDeviceName(_ snapshot: SyncSnapshotMetadata) -> String {
@@ -221,6 +240,8 @@ struct SyncRecoveryView: View {
                 return ForkL10n.format("SYNC_FORCE_PULL_SNAPSHOT_TITLE_FORMAT", snapshot.revision)
             case let .deleteSnapshot(snapshot):
                 return ForkL10n.format("SYNC_DELETE_SNAPSHOT_TITLE_FORMAT", snapshot.revision)
+            case .cleanupSnapshots:
+                return ForkL10n.string("SYNC_CLEANUP_CONFIRM_TITLE")
             case .resetCursor:
                 return ForkL10n.string("SYNC_RESET_CURSOR_TITLE")
             case .resetAll:
@@ -231,17 +252,25 @@ struct SyncRecoveryView: View {
     private func confirmationMessage(for item: RecoveryConfirmation) -> String {
         switch item {
             case .forcePush:
-                ForkL10n.string("SYNC_FORCE_PUSH_MESSAGE")
+                return ForkL10n.string("SYNC_FORCE_PUSH_MESSAGE")
             case .forcePullLatest:
-                ForkL10n.string("SYNC_FORCE_PULL_LATEST_MESSAGE")
-            case .forcePullSnapshot:
-                ForkL10n.string("SYNC_FORCE_PULL_SNAPSHOT_MESSAGE")
-            case .deleteSnapshot:
-                ForkL10n.string("SYNC_DELETE_SNAPSHOT_MESSAGE")
+                return ForkL10n.string("SYNC_FORCE_PULL_LATEST_MESSAGE")
+            case let .forcePullSnapshot(snapshot):
+                if isLatestSnapshot(snapshot) {
+                    return ForkL10n.string("SYNC_FORCE_PULL_LATEST_MESSAGE")
+                }
+                return ForkL10n.string("SYNC_FORCE_PULL_SNAPSHOT_MESSAGE")
+            case let .deleteSnapshot(snapshot):
+                if isLatestSnapshot(snapshot) {
+                    return ForkL10n.string("SYNC_DELETE_HEAD_SNAPSHOT_MESSAGE")
+                }
+                return ForkL10n.string("SYNC_DELETE_SNAPSHOT_MESSAGE")
+            case .cleanupSnapshots:
+                return ForkL10n.format("SYNC_CLEANUP_CONFIRM_MESSAGE_FORMAT", viewModel.maxRemoteSnapshots)
             case .resetCursor:
-                ForkL10n.string("SYNC_RESET_CURSOR_MESSAGE")
+                return ForkL10n.string("SYNC_RESET_CURSOR_MESSAGE")
             case .resetAll:
-                ForkL10n.string("SYNC_RESET_ALL_MESSAGE")
+                return ForkL10n.string("SYNC_RESET_ALL_MESSAGE")
         }
     }
 
@@ -257,12 +286,16 @@ struct SyncRecoveryView: View {
                     Task { await viewModel.forcePull() }
                 }
             case let .forcePullSnapshot(snapshot):
-                Button(ForkL10n.string("SYNC_FORCE_PULL_LATEST_BUTTON"), role: .destructive) {
+                Button(ForkL10n.string("SYNC_RESTORE_SNAPSHOT_BUTTON"), role: .destructive) {
                     Task { await viewModel.forcePull(snapshot: snapshot) }
                 }
             case let .deleteSnapshot(snapshot):
                 Button(NSLocalizedString("DELETE"), role: .destructive) {
                     Task { await viewModel.deleteRemoteSnapshot(snapshot) }
+                }
+            case .cleanupSnapshots:
+                Button(ForkL10n.string("SYNC_CLEANUP_SNAPSHOTS_BUTTON"), role: .destructive) {
+                    Task { await viewModel.cleanupRemoteSnapshots() }
                 }
             case .resetCursor:
                 Button(ForkL10n.string("SYNC_RESET_CURSOR_BUTTON"), role: .destructive) {

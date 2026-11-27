@@ -9,13 +9,31 @@ import UIKit
 struct SyncShareItem: Identifiable {
     let id = UUID()
     let items: [Any]
+    let cleanupURL: URL?
+
+    init(items: [Any], cleanupURL: URL? = nil) {
+        self.items = items
+        self.cleanupURL = cleanupURL
+    }
 }
 
 struct SyncShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    let cleanupURL: URL?
+
+    init(items: [Any], cleanupURL: URL? = nil) {
+        self.items = items
+        self.cleanupURL = cleanupURL
+    }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let cleanupURL {
+            controller.completionWithItemsHandler = { _, _, _, _ in
+                try? FileManager.default.removeItem(at: cleanupURL)
+            }
+        }
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
@@ -299,7 +317,7 @@ struct SyncSchemaImportSheet: View {
                 }
             }
             .sheet(item: $shareItem) { item in
-                SyncShareSheet(items: item.items)
+                SyncShareSheet(items: item.items, cleanupURL: item.cleanupURL)
             }
         }
     }
@@ -309,7 +327,7 @@ struct SyncSchemaImportSheet: View {
         guard let data = schemaJSON.data(using: .utf8) else { return }
         do {
             try data.write(to: url, options: .atomic)
-            shareItem = SyncShareItem(items: [url])
+            shareItem = SyncShareItem(items: [url], cleanupURL: url)
         } catch {
             UIPasteboard.general.string = schemaJSON
             copied = true

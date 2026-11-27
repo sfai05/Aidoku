@@ -167,7 +167,7 @@ struct SyncSettingsViewModelTests {
         }
 
         func tearDown() {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+            UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
             tempDir.removeItem()
         }
     }
@@ -549,5 +549,145 @@ struct SyncSettingsViewModelTests {
         #expect(harness.config.lastSyncedRevision == 1)
         #expect(harness.viewModel.status.stats.libraryCount == 1)
         #expect(harness.viewModel.bannerMessage?.tone == .success)
+    }
+}
+
+extension SyncSettingsViewModelTests {
+    @Test func signOutThenSwitchServerWithSameUserResetsCursorAndTombstones() async throws {
+        let handlers: [ViewModelMockHTTPClient.Handler] = [
+            // Sign in #1 on server 1
+            { _ in (200, Data(#"{"token":"jwt-s1","record":{"id":"same-user","email":"u@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-s1-r","record":{"id":"same-user","email":"u@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) },
+            // Sign in #2 on server 2 (same user id!)
+            { _ in (200, Data(#"{"token":"jwt-s2","record":{"id":"same-user","email":"u@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-s2-r","record":{"id":"same-user","email":"u@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) }
+        ]
+        let harness = Harness(handlers: handlers, signedIn: false, enabled: false, serverURL: nil)
+        defer { harness.tearDown() }
+
+        harness.viewModel.serverURLInput = "https://server1.example.com"
+        harness.viewModel.emailInput = "u@example.com"
+        harness.viewModel.passwordInput = "pw1"
+        await harness.viewModel.signIn()
+
+        harness.config.isEnabled = true
+        harness.config.lastSyncedRevision = 5
+        harness.tombstoneStore.recordLibraryDeletion(
+            mangaId: MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-s1"),
+            at: SyncTestFixtures.date(4_500)
+        )
+
+        // Sign out deletes Keychain userId, yet server switch must still reset cursor & tombstones.
+        await harness.viewModel.signOut()
+        harness.viewModel.serverURLInput = "https://server2.example.com/"
+        harness.viewModel.emailInput = "u@example.com"
+        harness.viewModel.passwordInput = "pw1"
+        await harness.viewModel.signIn()
+
+        #expect(harness.config.lastSyncedRevision == 0)
+        #expect(harness.config.lastSyncedServerURL == "https://server2.example.com")
+        #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(!harness.tombstoneStore.snapshot().hasPendingChanges)
+    }
+
+    @Test func signOutThenSwitchOrKeepAccountOnSameServerHandlesCursorCorrectly() async throws {
+        let handlers: [ViewModelMockHTTPClient.Handler] = [
+            // Initial sign in as user-A
+            { _ in (200, Data(#"{"token":"jwt-a1","record":{"id":"user-A","email":"a@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-a1-r","record":{"id":"user-A","email":"a@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) },
+            // Re-sign-in as SAME user-A on SAME server -> preserves cursor & tombstones
+            { _ in (200, Data(#"{"token":"jwt-a2","record":{"id":"user-A","email":"a@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-a2-r","record":{"id":"user-A","email":"a@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) },
+            // Sign in as DIFFERENT user-B on SAME server -> resets cursor & tombstones
+            { _ in (200, Data(#"{"token":"jwt-b1","record":{"id":"user-B","email":"b@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"code":200}"#.utf8)) },
+            { _ in (200, Data(#"{"token":"jwt-b1-r","record":{"id":"user-B","email":"b@example.com"}}"#.utf8)) },
+            { _ in (200, Data(#"{"items":[]}"#.utf8)) }
+        ]
+        let harness = Harness(handlers: handlers, signedIn: false, enabled: false, serverURL: nil)
+        defer { harness.tearDown() }
+
+        harness.viewModel.serverURLInput = "https://pb.example.com"
+        harness.viewModel.emailInput = "a@example.com"
+        harness.viewModel.passwordInput = "pwA"
+        await harness.viewModel.signIn()
+
+        harness.config.isEnabled = true
+        harness.config.lastSyncedRevision = 4
+        harness.tombstoneStore.recordLibraryDeletion(
+            mangaId: MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-userA"),
+            at: SyncTestFixtures.date(4_600)
+        )
+
+        // Same user re-sign-in preserves revision & pending tombstones.
+        await harness.viewModel.signOut()
+        harness.viewModel.passwordInput = "pwA"
+        await harness.viewModel.signIn()
+        #expect(harness.config.lastSyncedRevision == 4)
+        #expect(harness.tombstoneStore.snapshot().hasPendingChanges)
+
+        // Switching to user-B after signOut must reset revision & tombstones.
+        await harness.viewModel.signOut()
+        harness.viewModel.emailInput = "b@example.com"
+        harness.viewModel.passwordInput = "pwB"
+        await harness.viewModel.signIn()
+        #expect(harness.config.lastSyncedRevision == 0)
+        #expect(harness.config.lastSyncedUserId == "user-B")
+        #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(!harness.tombstoneStore.snapshot().hasPendingChanges)
+    }
+
+    @Test func saveConnectionSettingsResetsCursorClearsSessionAndTrimsDeviceName() async throws {
+        let harness = Harness(
+            signedIn: true,
+            enabled: true,
+            serverURL: "https://pb1.example.com"
+        )
+        defer { harness.tearDown() }
+
+        harness.config.lastSyncedRevision = 6
+        harness.config.lastSyncedServerURL = "https://pb1.example.com"
+        harness.config.lastSyncedCollectionName = PocketBaseSchema.defaultCollectionName
+        harness.tombstoneStore.recordLibraryDeletion(
+            mangaId: MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-col"),
+            at: SyncTestFixtures.date(4_700)
+        )
+
+        // Changing only collection name resets cursor while keeping auth session.
+        harness.viewModel.collectionNameInput = "custom_sync"
+        let savedCollection = await harness.viewModel.saveConnectionSettings()
+        #expect(savedCollection)
+        #expect(harness.config.collectionName == "custom_sync")
+        #expect(harness.config.lastSyncedRevision == 0)
+        #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(harness.viewModel.isSignedIn)
+
+        // Changing server URL while signed in clears Keychain session, disables sync, and resets cursor.
+        harness.config.lastSyncedRevision = 6
+        harness.tombstoneStore.recordLibraryDeletion(
+            mangaId: MangaIdentifier(sourceKey: "mangadex", mangaKey: "m-srv"),
+            at: SyncTestFixtures.date(4_800)
+        )
+        harness.viewModel.serverURLInput = "https://pb2.example.com/"
+        let savedServer = await harness.viewModel.saveConnectionSettings()
+        #expect(savedServer)
+        #expect(!harness.viewModel.isSignedIn)
+        #expect(!harness.viewModel.isEnabled)
+        #expect(harness.config.lastSyncedRevision == 0)
+        #expect(harness.tombstoneStore.snapshot().tombstones == .empty)
+        #expect(try harness.keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken) == nil)
+
+        // Device name whitespace trimming on live edit.
+        harness.viewModel.deviceNameInput = "  iPad Pro  "
+        harness.viewModel.persistDeviceNameInput()
+        #expect(harness.config.deviceName == "iPad Pro")
     }
 }

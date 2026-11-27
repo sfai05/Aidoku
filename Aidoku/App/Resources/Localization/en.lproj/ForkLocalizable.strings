@@ -116,12 +116,17 @@
 "SYNC_SNAPSHOTS_EMPTY" = "No remote snapshots loaded. Tap Refresh to fetch.";
 "SYNC_SNAPSHOTS_REFRESH_BUTTON" = "Refresh Snapshots";
 "SYNC_SNAPSHOT_ROW_FORMAT" = "Rev #%d · %@";
+"SYNC_SNAPSHOT_LATEST_BADGE" = "Latest";
 "SYNC_FORCE_PULL_SNAPSHOT_TITLE_FORMAT" = "Restore Snapshot #%d?";
 "SYNC_FORCE_PULL_SNAPSHOT_MESSAGE" = "Replaces local data with this historical snapshot and publishes a new head revision. Remember to also run Force Pull on your other devices so older changes are not merged back in.";
+"SYNC_RESTORE_SNAPSHOT_BUTTON" = "Restore Snapshot";
 "SYNC_DELETE_SNAPSHOT_TITLE_FORMAT" = "Delete Remote Snapshot #%d?";
 "SYNC_DELETE_SNAPSHOT_MESSAGE" = "Deletes this snapshot record from PocketBase. Your local device data is not changed.";
+"SYNC_DELETE_HEAD_SNAPSHOT_MESSAGE" = "This is the latest remote snapshot. Deleting it can leave other devices pointing at a missing revision until their next sync. Your local device data is not changed.";
 "SYNC_DELETE_SNAPSHOT_SUCCESS_FORMAT" = "Deleted remote snapshot #%d.";
 "SYNC_CLEANUP_SNAPSHOTS_BUTTON" = "Clean Up Stale Remote Snapshots";
+"SYNC_CLEANUP_CONFIRM_TITLE" = "Clean Up Stale Remote Snapshots?";
+"SYNC_CLEANUP_CONFIRM_MESSAGE_FORMAT" = "Deletes older remote snapshots from PocketBase, keeping only the latest %d snapshot(s).";
 "SYNC_CLEANUP_RESULT_FORMAT" = "Removed %d stale remote snapshot(s).";
 "SYNC_SECTION_LOCAL_RESET" = "Local State Reset";
 "SYNC_RESET_CURSOR_BUTTON" = "Reset Local Sync Cursor";

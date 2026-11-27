@@ -160,21 +160,29 @@ final class SyncSettingsViewModel: ObservableObject {
     }
 
     @discardableResult
-    func saveConnectionSettings(requireServerURL: Bool = true, showBanner: Bool = true) -> Bool {
+    func saveConnectionSettings(requireServerURL: Bool = true, showBanner: Bool = true) async -> Bool {
         do {
             let normalizedServer = try validatedServerURLString(requireNonEmpty: requireServerURL)
             let validCollection = try validatedCollectionName()
 
-            engine.configuration.serverURL = normalizedServer
-            engine.configuration.collectionName = validCollection
+            let updateResult = await engine.updateServerConfiguration(
+                serverURL: normalizedServer,
+                collectionName: validCollection
+            )
             serverURLInput = normalizedServer ?? ""
             collectionNameInput = validCollection
+            if updateResult.didClearSession {
+                healthStatus = nil
+                remoteSnapshots = []
+                passwordInput = ""
+            } else if updateResult.didResetCursor {
+                healthStatus = nil
+                remoteSnapshots = []
+            }
+            await refreshState()
 
             if showBanner {
                 bannerMessage = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SETTINGS_SAVED"))
-            }
-            Task {
-                await engine.notifyConfigurationChanged()
             }
             return true
         } catch {
@@ -185,7 +193,7 @@ final class SyncSettingsViewModel: ObservableObject {
 
     func persistDeviceNameInput() {
         let trimmed = deviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        engine.configuration.deviceName = trimmed.isEmpty ? "Kodoku Device" : deviceNameInput
+        engine.configuration.deviceName = trimmed.isEmpty ? "Kodoku Device" : trimmed
     }
 
     func updateDeviceName() {
@@ -209,7 +217,7 @@ final class SyncSettingsViewModel: ObservableObject {
         if enabled {
             let trimmedInput = serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmedInput.isEmpty {
-                guard saveConnectionSettings(requireServerURL: true, showBanner: false) else {
+                guard await saveConnectionSettings(requireServerURL: true, showBanner: false) else {
                     isEnabled = false
                     return
                 }
@@ -237,10 +245,16 @@ final class SyncSettingsViewModel: ObservableObject {
         let capturedPassword = passwordInput
         passwordInput = ""
 
-        guard saveConnectionSettings(requireServerURL: true, showBanner: false) else {
-            return
-        }
-        guard let normalizedURL = try? engine.configuration.normalizedServerURL().absoluteString else {
+        let normalizedURL: String
+        let validCollection: String
+        do {
+            guard let resolvedURL = try validatedServerURLString(requireNonEmpty: true) else {
+                throw SyncError.notConfigured("PocketBase server URL is missing.")
+            }
+            normalizedURL = resolvedURL
+            validCollection = try validatedCollectionName()
+        } catch {
+            bannerMessage = SyncBannerMessage(tone: .error, text: error.localizedDescription)
             return
         }
 
@@ -250,9 +264,12 @@ final class SyncSettingsViewModel: ObservableObject {
         do {
             let session = try await engine.signIn(
                 serverURL: normalizedURL,
+                collectionName: validCollection,
                 email: emailInput,
                 password: capturedPassword
             )
+            serverURLInput = engine.configuration.serverURL ?? normalizedURL
+            collectionNameInput = validCollection
             emailInput = session.email
             await refreshState()
             bannerMessage = SyncBannerMessage(tone: .success, text: ForkL10n.string("SYNC_SIGN_IN_SUCCESS"))
@@ -310,7 +327,7 @@ final class SyncSettingsViewModel: ObservableObject {
 
     func runHealthCheck() async {
         if !serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            guard saveConnectionSettings(requireServerURL: true, showBanner: false) else {
+            guard await saveConnectionSettings(requireServerURL: true, showBanner: false) else {
                 return
             }
         }
@@ -335,10 +352,17 @@ final class SyncSettingsViewModel: ObservableObject {
             throw SyncError.notConfigured("PocketBase provider is unavailable.")
         }
 
-        engine.configuration.serverURL = serverURL
-        engine.configuration.collectionName = collection
+        let updateResult = await engine.updateServerConfiguration(serverURL: serverURL, collectionName: collection)
         serverURLInput = serverURL
         collectionNameInput = collection
+        if updateResult.didClearSession {
+            healthStatus = nil
+            remoteSnapshots = []
+            passwordInput = ""
+        } else if updateResult.didResetCursor {
+            healthStatus = nil
+            remoteSnapshots = []
+        }
 
         let result = try await provider.provisionCollection(
             serverURL: serverURL,
@@ -346,7 +370,7 @@ final class SyncSettingsViewModel: ObservableObject {
             superuserEmail: superuserEmail,
             superuserPassword: superuserPassword
         )
-        if isSignedIn {
+        if engine.pocketBaseProvider?.currentSession() != nil {
             await runHealthCheck()
         } else {
             await refreshState()

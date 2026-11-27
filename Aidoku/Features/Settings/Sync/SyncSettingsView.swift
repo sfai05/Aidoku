@@ -167,7 +167,9 @@ struct SyncSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit {
-                        viewModel.saveConnectionSettings()
+                        Task {
+                            await viewModel.saveConnectionSettings()
+                        }
                     }
             }
 
@@ -186,16 +188,20 @@ struct SyncSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onSubmit {
-                        viewModel.saveConnectionSettings(
-                            requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        )
+                        Task {
+                            await viewModel.saveConnectionSettings(
+                                requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
+                        }
                     }
             }
 
             Button {
-                viewModel.saveConnectionSettings(
-                    requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                )
+                Task {
+                    await viewModel.saveConnectionSettings(
+                        requireServerURL: !viewModel.serverURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
             } label: {
                 Text(ForkL10n.string("SYNC_SAVE_SETTINGS_BUTTON"))
             }
