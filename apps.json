@@ -31,6 +31,16 @@
       "versions": [
         {
           "version": "0.9",
+          "buildVersion": "106",
+          "date": "2026-11-27T23:27:17Z",
+          "localizedDescription": "Fix MangaBaka tracking reliability (decimal progress, 404 recovery, POSIX dates, finish_date encoding) and add Personal Access Token (API Key) authentication.",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.106/Kodoku-v0.9-kodoku.106.ipa",
+          "size": 15339235,
+          "minOSVersion": "15.0",
+          "sha256": "4cbdd86481a8129fc625c77b7e8f826a30a49ef2c4b5dc4848b2fcd740f19cbd"
+        },
+        {
+          "version": "0.9",
           "buildVersion": "105",
           "date": "2026-11-27T21:24:20Z",
           "localizedDescription": "Added automatic Traditional Chinese (zh-Hant) description conversion from Bangumi Simplified Chinese synopses, while keeping native MangaDex Traditional Chinese ranked ahead when available.",
