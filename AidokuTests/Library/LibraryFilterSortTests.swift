@@ -577,6 +577,11 @@ extension LibraryFilterSortTests {
         #expect(vc.forkFilterSortCoordinator.activeSheetState?.resultCount == 2)
         #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == false)
 
+        let initialState = vc.forkFilterSortCoordinator.activeSheetState
+        vc.openFilterSortSheet()
+        #expect(vc.forkFilterSortCoordinator.activeSheetState === initialState)
+        #expect(vc.presentedViewController === hostingController)
+
         let toggledSortMethod: LibraryViewModel.SortMethod = vc.viewModel.sortMethod == .alphabetical
             ? .lastUpdated
             : .alphabetical
@@ -649,6 +654,12 @@ extension LibraryFilterSortTests {
 
     @MainActor
     @Test func filterSortPresentationConfiguresPopoverOnRegularPadAndSheetElsewhere() {
+        let snapshot = snapshotUserDefaults()
+        defer { restoreUserDefaults(snapshot) }
+
+        AppSettings.library.lockLibrary.set(false)
+        AppSettings.library.lockedCategories.set([])
+
         let vc = LibraryViewController()
         let nav = UINavigationController(rootViewController: vc)
         _ = nav.view
@@ -667,8 +678,13 @@ extension LibraryFilterSortTests {
         #expect(popoverTarget.popoverPresentationController != nil)
         if #available(iOS 16.0, *) {
             #expect(popoverTarget.popoverPresentationController?.sourceItem as AnyObject? === vc.filterSortBarButton)
+            #expect(
+                popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.detents.first?.identifier
+                    == UISheetPresentationController.Detent.Identifier("libraryFilterSortPreferred")
+            )
         }
         #expect(popoverTarget.popoverPresentationController?.permittedArrowDirections == .any)
+        #expect(popoverTarget.popoverPresentationController?.passthroughViews?.isEmpty == true)
         #expect(popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.detents.count == 2)
         #expect(popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.prefersGrabberVisible == true)
         #expect(

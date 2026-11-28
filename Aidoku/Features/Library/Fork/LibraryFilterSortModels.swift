@@ -130,6 +130,7 @@ enum LibraryFilterSortHelpers {
         return min(maximumDetentValue, max(proportional, minimumComfortable))
     }
 
+    /// Matches phone sheet inner width (~368pt with 16pt horizontal padding) so Sort and chip rows avoid clipping.
     static let preferredPopoverContentSize = CGSize(width: 400, height: 540)
 
     static func shouldPresentAsPopover(

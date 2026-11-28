@@ -140,17 +140,18 @@ extension LibraryViewController {
 
         if usePopover && canAnchorToBarButton {
             controller.modalPresentationStyle = .popover
-            controller.preferredContentSize = LibraryFilterSortHelpers.preferredPopoverContentSize
             if let popover = controller.popoverPresentationController {
+                controller.preferredContentSize = LibraryFilterSortHelpers.preferredPopoverContentSize
                 if #available(iOS 16.0, *) {
                     popover.sourceItem = filterSortBarButton
                 } else {
                     popover.barButtonItem = filterSortBarButton
                 }
                 popover.permittedArrowDirections = .any
+                popover.passthroughViews = []
                 configureFilterSortSheetPresentation(popover.adaptiveSheetPresentationController)
+                return
             }
-            return
         }
 
         controller.modalPresentationStyle = .pageSheet
@@ -160,7 +161,7 @@ extension LibraryViewController {
     }
 
     @objc func openFilterSortSheet() {
-        guard !locked else { return }
+        guard !locked, presentedViewController == nil else { return }
         let state = LibraryFilterSortState(
             viewModel: viewModel,
             isUpdatingResults: forkFilterSortCoordinator.isLoadingResults
