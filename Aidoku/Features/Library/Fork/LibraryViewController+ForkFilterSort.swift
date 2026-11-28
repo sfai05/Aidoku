@@ -49,9 +49,13 @@ extension LibraryViewController {
         let hasActiveFilters = !viewModel.filters.isEmpty
         if #available(iOS 26.0, *) {
             filterSortBarButton.isSelected = hasActiveFilters
+            let selectedIconColor = ForkContrastColor.uiForegroundColor(
+                for: view.tintColor,
+                traitCollection: traitCollection
+            )
             filterSortBarButton.image = hasActiveFilters
                 ? UIImage(systemName: "line.3.horizontal.decrease")?
-                    .withTintColor(.white, renderingMode: .alwaysOriginal)
+                    .withTintColor(selectedIconColor, renderingMode: .alwaysOriginal)
                 : UIImage(systemName: "line.3.horizontal.decrease")
         } else {
             filterSortBarButton.image = UIImage(

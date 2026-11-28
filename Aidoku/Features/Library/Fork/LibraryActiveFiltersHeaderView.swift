@@ -27,6 +27,16 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
         super.init(frame: frame)
         configureViews()
         constrainViews()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleContentSizeCategoryDidChange),
+            name: UIContentSizeCategory.didChangeNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     required init?(coder: NSCoder) {
@@ -56,6 +66,13 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
         super.tintColorDidChange()
         guard !currentChips.isEmpty else { return }
         rebuildChips()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
+            handleContentSizeCategoryDidChange()
+        }
     }
 }
 
@@ -135,7 +152,8 @@ private extension LibraryActiveFiltersHeaderView {
         var titleAttributes = AttributeContainer()
         titleAttributes.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
             for: .systemFont(ofSize: 12, weight: .semibold),
-            maximumPointSize: 16
+            maximumPointSize: 16,
+            compatibleWith: traitCollection
         )
         config.attributedTitle = AttributedString(chip.title, attributes: titleAttributes)
 
@@ -159,7 +177,8 @@ private extension LibraryActiveFiltersHeaderView {
         var titleAttributes = AttributeContainer()
         titleAttributes.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
             for: .systemFont(ofSize: 12, weight: .medium),
-            maximumPointSize: 16
+            maximumPointSize: 16,
+            compatibleWith: traitCollection
         )
         config.attributedTitle = AttributedString(NSLocalizedString("CLEAR_FILTERS"), attributes: titleAttributes)
 
@@ -172,6 +191,15 @@ private extension LibraryActiveFiltersHeaderView {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.setContentHuggingPriority(.required, for: .horizontal)
         return button
+    }
+
+    @objc func handleContentSizeCategoryDidChange() {
+        guard !currentChips.isEmpty else { return }
+        rebuildChips()
+        if scrollView.bounds.width > 0 {
+            layoutIfNeeded()
+            edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
+        }
     }
 }
 
