@@ -276,3 +276,6 @@
 "LIBRARY_FILTER_STATE_EXCLUDED" = "Excluded";
 "LIBRARY_ACTIVE_FILTERS_COUNT_FORMAT" = "%d active";
 "LIBRARY_REMOVE_FILTER_CHIP_A11Y_FORMAT" = "Remove %@ filter";
+
+/* Library Category Pill Bar */
+"LIBRARY_CATEGORIES_ALL_MENU" = "All Categories";
