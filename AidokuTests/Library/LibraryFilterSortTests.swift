@@ -252,6 +252,10 @@ import UIKit
                 initialHeader.activeFiltersView.bounds,
                 from: initialHeader.activeFiltersView
             )
+            #expect(abs(categoryFrame.height - 44) < 0.01)
+            #expect(abs(filtersFrame.height - 38) < 0.01)
+            #expect(abs(filtersFrame.minY - 44) < 0.01)
+            #expect(abs(filtersFrame.maxY - 82) < 0.01)
             #expect(filtersFrame.minY >= categoryFrame.maxY)
             #expect(!categoryFrame.intersects(filtersFrame))
         }

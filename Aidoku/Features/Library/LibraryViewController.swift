@@ -436,8 +436,8 @@ class LibraryViewController: OldMangaCollectionViewController {
         let config = UICollectionViewCompositionalLayoutConfiguration()
         config.interSectionSpacing = layout.configuration.interSectionSpacing
         var boundaryItems: [NSCollectionLayoutBoundarySupplementaryItem] = []
-        let showCategories = !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty
-        let showActiveFilters = !viewModel.filters.isEmpty && !locked
+        let showCategories = shouldShowCategoryBar
+        let showActiveFilters = shouldShowActiveFiltersBar
         // Fork: Single stacked top header prevents category bar and filter chips from overlapping
         let topHeaderHeight = (showCategories ? LibraryTopHeaderView.categoryBarHeight : 0)
             + (showActiveFilters ? LibraryTopHeaderView.activeFiltersHeight : 0)

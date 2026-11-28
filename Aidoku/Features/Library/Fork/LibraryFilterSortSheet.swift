@@ -2,7 +2,7 @@
 //  LibraryFilterSortSheet.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/27/26.
+//  Created by Dokuha on 11/27/26.
 //
 
 import SwiftUI
@@ -311,6 +311,7 @@ private extension LibraryFilterSortSheet {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     func filterChip(
@@ -494,7 +495,7 @@ private struct FilterChipFlowLayout: Layout {
 
         widestRow = max(widestRow, currentX)
         let totalHeight = items.isEmpty ? 0 : currentY + rowHeight
-        let resolvedWidth = maxWidth ?? widestRow
+        let resolvedWidth = maxWidth.flatMap { $0.isFinite ? $0 : nil } ?? widestRow
         return Arrangement(size: CGSize(width: resolvedWidth, height: totalHeight), items: items)
     }
 }

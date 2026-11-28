@@ -68,8 +68,8 @@ extension LibraryViewController {
     }
 
     func refreshActiveFiltersHeader() {
-        let showCategories = !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty
-        let shouldShow = !viewModel.filters.isEmpty && !locked
+        let showCategories = shouldShowCategoryBar
+        let shouldShow = shouldShowActiveFiltersBar
         if shouldShow != forkFilterSortCoordinator.isShowingActiveFiltersHeader {
             collectionView.collectionViewLayout = makeCollectionViewLayout()
         }

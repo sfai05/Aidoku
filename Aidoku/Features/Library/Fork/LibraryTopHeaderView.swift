@@ -2,7 +2,7 @@
 //  LibraryTopHeaderView.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/28/26.
+//  Created by Dokuha on 11/28/26.
 //
 
 import UIKit

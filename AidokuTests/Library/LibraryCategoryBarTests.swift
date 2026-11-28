@@ -321,6 +321,9 @@ import UIKit
             #expect(!topHeader.activeFiltersView.isHidden)
             let categoryFrame = topHeader.convert(topHeader.categoryBarView.bounds, from: topHeader.categoryBarView)
             let filtersFrame = topHeader.convert(topHeader.activeFiltersView.bounds, from: topHeader.activeFiltersView)
+            #expect(abs(categoryFrame.height - 44) < 0.01)
+            #expect(abs(filtersFrame.height - 38) < 0.01)
+            #expect(abs(filtersFrame.minY - 44) < 0.01)
             #expect(filtersFrame.minY >= categoryFrame.maxY)
             #expect(!categoryFrame.intersects(filtersFrame))
         }
@@ -338,6 +341,19 @@ import UIKit
         vc.clearAllFilters()
         let clearedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
         #expect(clearedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 44)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+
+        vc.viewModel.categories = []
+        vc.viewModel.filterGroups = []
+        vc.toggleFilterFromSheet(method: .downloaded)
+        let filtersOnlyConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(filtersOnlyConfig?.boundarySupplementaryItems.count == 1)
+        #expect(filtersOnlyConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 38)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+
+        vc.clearAllFilters()
+        let neitherConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(neitherConfig?.boundarySupplementaryItems.isEmpty ?? false)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
     }
 }

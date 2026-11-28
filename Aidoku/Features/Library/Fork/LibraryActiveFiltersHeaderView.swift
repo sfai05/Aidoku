@@ -9,8 +9,6 @@ import UIKit
 
 /// Horizontal strip of removable active filter chips shown above the library collection.
 final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
-    static let elementKind = "ForkLibraryActiveFiltersHeader"
-
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
 

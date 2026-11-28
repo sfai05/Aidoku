@@ -2,13 +2,21 @@
 //  LibraryViewController+ForkCategoryBar.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/28/26.
+//  Created by Dokuha on 11/28/26.
 //
 
 import UIKit
 
 // MARK: - Fork: Horizontal scrollable category pill bar
 extension LibraryViewController {
+    var shouldShowCategoryBar: Bool {
+        !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty
+    }
+
+    var shouldShowActiveFiltersBar: Bool {
+        !viewModel.filters.isEmpty && !locked
+    }
+
     func buildCategoryBarSnapshot() -> LibraryCategoryBarSnapshot {
         LibraryCategoryBarBuilder.build(
             LibraryCategoryBarInput(
@@ -27,8 +35,8 @@ extension LibraryViewController {
             elementKind: UICollectionView.elementKindSectionHeader
         ) { [weak self] header, _, _ in
             guard let self else { return }
-            let showCategories = !self.viewModel.categories.isEmpty || !self.viewModel.filterGroups.isEmpty
-            let showActiveFilters = !self.viewModel.filters.isEmpty && !self.locked
+            let showCategories = self.shouldShowCategoryBar
+            let showActiveFilters = self.shouldShowActiveFiltersBar
             header.configureVisibility(showCategories: showCategories, showActiveFilters: showActiveFilters)
             header.categoryBarView.delegate = self
             if showCategories {
@@ -41,8 +49,8 @@ extension LibraryViewController {
     }
 
     func refreshCategoryBarHeader(animatedScroll: Bool = false) {
-        let showCategories = !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty
-        let showActiveFilters = !viewModel.filters.isEmpty && !locked
+        let showCategories = shouldShowCategoryBar
+        let showActiveFilters = shouldShowActiveFiltersBar
         let snapshot = showCategories ? buildCategoryBarSnapshot() : nil
         for case let header as LibraryTopHeaderView in collectionView.visibleSupplementaryViews(
             ofKind: UICollectionView.elementKindSectionHeader
