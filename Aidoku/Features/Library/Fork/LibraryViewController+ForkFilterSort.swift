@@ -13,6 +13,7 @@ final class LibraryFilterSortCoordinator {
     weak var activeSheetState: LibraryFilterSortState?
     var isShowingActiveFiltersHeader = false
     var lastTopHeaderHeight: CGFloat = 0
+    var isLoadingResults = false
     var reloadGeneration = 0
     var activeReloadTask: Task<Void, Never>?
     var pendingLibraryLoad = false
@@ -97,14 +98,34 @@ extension LibraryViewController {
     }
 
     func syncFilterSortUIState(animatedCategoryScroll: Bool = false) {
-        forkFilterSortCoordinator.activeSheetState?.update(from: viewModel)
+        forkFilterSortCoordinator.activeSheetState?.update(
+            from: viewModel,
+            isUpdatingResults: forkFilterSortCoordinator.isLoadingResults
+        )
         updateFilterSortBarButton()
         refreshActiveFiltersHeader(animatedCategoryScroll: animatedCategoryScroll)
     }
 
+    static func makeFilterSortSheetDetents() -> [UISheetPresentationController.Detent] {
+        if #available(iOS 16.0, *) {
+            let preferred = UISheetPresentationController.Detent.custom(
+                identifier: .init("libraryFilterSortPreferred")
+            ) { context in
+                LibraryFilterSortHelpers.preferredSheetDetentHeight(
+                    maximumDetentValue: context.maximumDetentValue
+                )
+            }
+            return [preferred, .large()]
+        }
+        return [.medium(), .large()]
+    }
+
     @objc func openFilterSortSheet() {
         guard !locked else { return }
-        let state = LibraryFilterSortState(viewModel: viewModel)
+        let state = LibraryFilterSortState(
+            viewModel: viewModel,
+            isUpdatingResults: forkFilterSortCoordinator.isLoadingResults
+        )
         forkFilterSortCoordinator.activeSheetState = state
 
         let sheetView = LibraryFilterSortSheet(
@@ -124,9 +145,9 @@ extension LibraryViewController {
         )
 
         let controller = UIHostingController(rootView: sheetView)
-        controller.view.backgroundColor = .systemBackground
+        controller.view.backgroundColor = .systemGroupedBackground
         if let sheet = controller.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
+            sheet.detents = Self.makeFilterSortSheetDetents()
             sheet.prefersGrabberVisible = true
             sheet.prefersScrollingExpandsWhenScrolledToEdge = true
         }
@@ -169,6 +190,7 @@ extension LibraryViewController {
         forkFilterSortCoordinator.reloadGeneration &+= 1
         if requiresFullLoad {
             forkFilterSortCoordinator.pendingLibraryLoad = true
+            forkFilterSortCoordinator.isLoadingResults = true
         } else {
             forkFilterSortCoordinator.pendingSortOnly = true
         }
@@ -195,12 +217,21 @@ extension LibraryViewController {
                 }
 
                 if self.forkFilterSortCoordinator.reloadGeneration == generationAtStart {
+                    self.forkFilterSortCoordinator.isLoadingResults = false
                     self.updateEmptyStack()
                     self.updateDataSource()
                     self.syncFilterSortUIState()
                 }
             }
-            self?.forkFilterSortCoordinator.activeReloadTask = nil
+            guard let self else { return }
+            self.forkFilterSortCoordinator.activeReloadTask = nil
+            if self.forkFilterSortCoordinator.isLoadingResults {
+                self.forkFilterSortCoordinator.isLoadingResults = false
+                self.forkFilterSortCoordinator.activeSheetState?.update(
+                    from: self.viewModel,
+                    isUpdatingResults: false
+                )
+            }
         }
     }
 }

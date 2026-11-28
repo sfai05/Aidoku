@@ -69,7 +69,7 @@ struct LibraryFilterSortSheet: View {
     var body: some View {
         if #available(iOS 16.4, *) {
             navigationContent
-                .presentationBackground(Color(uiColor: .systemBackground))
+                .presentationBackground(Color(uiColor: .systemGroupedBackground))
         } else {
             navigationContent
         }
@@ -79,53 +79,61 @@ struct LibraryFilterSortSheet: View {
     private var navigationContent: some View {
         PlatformNavigationStack {
             ZStack {
-                Color(uiColor: .systemBackground)
+                Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
                 ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 12) {
                         sortSection
-                        filtersSection
-                        contentRatingSection
+                        sectionCard {
+                            filtersSection
+                        }
+                        sectionCard {
+                            contentRatingSection
+                        }
 
                         if !mergedSourceKeys.isEmpty {
-                            collapsibleChipSection(
-                                title: LibraryFilter.FilterMethod.source.title,
-                                activeCount: activeCount(for: .source),
-                                isExpanded: $isSourcesExpanded,
-                                items: mergedSourceKeys
-                            ) { key in
-                                filterChip(
-                                    title: resolveSourceName(key),
-                                    systemImage: nil,
-                                    triState: LibraryFilterSortHelpers.state(
-                                        for: .source,
-                                        value: key,
-                                        in: state.filters
-                                    )
-                                ) {
-                                    onToggleFilter(.source, key)
+                            sectionCard {
+                                collapsibleChipSection(
+                                    title: LibraryFilter.FilterMethod.source.title,
+                                    activeCount: activeCount(for: .source),
+                                    isExpanded: $isSourcesExpanded,
+                                    items: mergedSourceKeys
+                                ) { key in
+                                    filterChip(
+                                        title: resolveSourceName(key),
+                                        systemImage: nil,
+                                        triState: LibraryFilterSortHelpers.state(
+                                            for: .source,
+                                            value: key,
+                                            in: state.filters
+                                        )
+                                    ) {
+                                        onToggleFilter(.source, key)
+                                    }
                                 }
                             }
                         }
 
                         if !mergedCategories.isEmpty {
-                            collapsibleChipSection(
-                                title: LibraryFilter.FilterMethod.category.title,
-                                activeCount: activeCount(for: .category),
-                                isExpanded: $isCategoriesExpanded,
-                                items: mergedCategories
-                            ) { category in
-                                filterChip(
-                                    title: category,
-                                    systemImage: nil,
-                                    triState: LibraryFilterSortHelpers.state(
-                                        for: .category,
-                                        value: category,
-                                        in: state.filters
-                                    )
-                                ) {
-                                    onToggleFilter(.category, category)
+                            sectionCard {
+                                collapsibleChipSection(
+                                    title: LibraryFilter.FilterMethod.category.title,
+                                    activeCount: activeCount(for: .category),
+                                    isExpanded: $isCategoriesExpanded,
+                                    items: mergedCategories
+                                ) { category in
+                                    filterChip(
+                                        title: category,
+                                        systemImage: nil,
+                                        triState: LibraryFilterSortHelpers.state(
+                                            for: .category,
+                                            value: category,
+                                            in: state.filters
+                                        )
+                                    ) {
+                                        onToggleFilter(.category, category)
+                                    }
                                 }
                             }
                         }
@@ -138,6 +146,9 @@ struct LibraryFilterSortSheet: View {
             .navigationTitle(ForkL10n.string("LIBRARY_FILTER_SORT_TITLE"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    headerTitleView
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     CloseButton {
                         dismiss()
@@ -149,6 +160,36 @@ struct LibraryFilterSortSheet: View {
 }
 
 private extension LibraryFilterSortSheet {
+    var headerTitleView: some View {
+        let isEmptyFiltered = LibraryFilterSortHelpers.shouldHighlightEmptyResults(
+            resultCount: state.resultCount,
+            activeFilterCount: state.activeFilterCount,
+            isUpdatingResults: state.isUpdatingResults
+        )
+
+        return VStack(spacing: 1) {
+            Text(ForkL10n.string("LIBRARY_FILTER_SORT_TITLE"))
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(LibraryFilterSortHelpers.resultCountText(for: state.resultCount))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(isEmptyFiltered ? Color.orange : Color.secondary)
+                .opacity(state.isUpdatingResults ? 0.5 : 1)
+                .lineLimit(1)
+        }
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .accessibilityElement(children: .combine)
+    }
+
+    func sectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     var sortSection: some View {
         let directionTitle = state.sortAscending
             ? state.sortMethod.ascendingTitle
@@ -170,11 +211,32 @@ private extension LibraryFilterSortSheet {
                 }
                 .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
 
-            chipFlow(items: LibraryViewModel.SortMethod.allCases) { method in
-                sortChip(for: method, isUp: isUp)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(LibraryViewModel.SortMethod.allCases, id: \.self) { method in
+                            sortChip(for: method, isUp: isUp)
+                                .id(method)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .onAppear {
+                    proxy.scrollTo(state.sortMethod, anchor: .center)
+                }
+                .onValueChange(of: state.sortMethod) { newMethod in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(newMethod, anchor: .center)
+                    }
+                }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     var filtersSection: some View {
@@ -300,12 +362,12 @@ private extension LibraryFilterSortSheet {
             .foregroundStyle(isSelected ? Color.white : Color.primary)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.accentColor : Color(uiColor: .secondarySystemBackground))
+                    .fill(isSelected ? Color.accentColor : Color(uiColor: .secondarySystemFill))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
-                        isSelected ? Color.clear : Color(uiColor: .separator).opacity(0.35),
+                        isSelected ? Color.clear : Color(uiColor: .separator).opacity(0.22),
                         lineWidth: 1
                     )
             )
@@ -321,7 +383,7 @@ private extension LibraryFilterSortSheet {
         action: @escaping () -> Void
     ) -> some View {
         let backgroundColor: Color = switch triState {
-            case .off: Color(uiColor: .secondarySystemBackground)
+            case .off: Color(uiColor: .secondarySystemFill)
             case .included: .accentColor
             case .excluded: Color(uiColor: .systemRed)
         }
@@ -353,7 +415,7 @@ private extension LibraryFilterSortSheet {
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
-                        triState == .off ? Color(uiColor: .separator).opacity(0.35) : Color.clear,
+                        triState == .off ? Color(uiColor: .separator).opacity(0.22) : Color.clear,
                         lineWidth: 1
                     )
             )
@@ -497,5 +559,21 @@ private struct FilterChipFlowLayout: Layout {
         let totalHeight = items.isEmpty ? 0 : currentY + rowHeight
         let resolvedWidth = maxWidth.flatMap { $0.isFinite ? $0 : nil } ?? widestRow
         return Arrangement(size: CGSize(width: resolvedWidth, height: totalHeight), items: items)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func onValueChange<Value: Equatable>(
+        of value: Value,
+        perform action: @escaping (Value) -> Void
+    ) -> some View {
+        if #available(iOS 17.0, *) {
+            onChange(of: value) { _, newValue in
+                action(newValue)
+            }
+        } else {
+            onChange(of: value, perform: action)
+        }
     }
 }
