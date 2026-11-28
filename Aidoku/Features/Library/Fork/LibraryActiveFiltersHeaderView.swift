@@ -9,8 +9,10 @@ import UIKit
 
 /// Horizontal strip of removable active filter chips shown above the library collection.
 final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
-    private let scrollView = UIScrollView()
+    private let scrollContainerView = UIView()
+    let scrollView = UIScrollView()
     private let stackView = UIStackView()
+    private let edgeFadeController = HorizontalEdgeFadeMaskController()
 
     private var currentChips: [LibraryActiveFilterChip] = []
     private var onRemoveFilter: ((LibraryFilter) -> Void)?
@@ -18,6 +20,8 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
 
     var displayedChips: [LibraryActiveFilterChip] { currentChips }
     var arrangedChipViews: [UIView] { stackView.arrangedSubviews }
+    var edgeFadeState: HorizontalEdgeFadeState { edgeFadeController.currentState }
+    var isEdgeFadeMaskActive: Bool { scrollContainerView.layer.mask != nil }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -42,6 +46,12 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
         rebuildChips()
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scrollView.layoutIfNeeded()
+        edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
+    }
+
     override func tintColorDidChange() {
         super.tintColorDidChange()
         guard !currentChips.isEmpty else { return }
@@ -51,10 +61,13 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
 
 private extension LibraryActiveFiltersHeaderView {
     func configureViews() {
+        addSubview(scrollContainerView)
+
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
         scrollView.contentInsetAdjustmentBehavior = .never
-        addSubview(scrollView)
+        scrollView.delegate = self
+        scrollContainerView.addSubview(scrollView)
 
         stackView.axis = .horizontal
         stackView.alignment = .center
@@ -65,14 +78,20 @@ private extension LibraryActiveFiltersHeaderView {
     }
 
     func constrainViews() {
+        scrollContainerView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollContainerView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            scrollContainerView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+            scrollContainerView.topAnchor.constraint(equalTo: topAnchor),
+            scrollContainerView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            scrollView.leadingAnchor.constraint(equalTo: scrollContainerView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: scrollContainerView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: scrollContainerView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: scrollContainerView.bottomAnchor),
 
             stackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
@@ -95,6 +114,7 @@ private extension LibraryActiveFiltersHeaderView {
         if currentChips.count >= 2 {
             stackView.addArrangedSubview(makeClearAllButton())
         }
+        setNeedsLayout()
     }
 
     func makeChipButton(for chip: LibraryActiveFilterChip) -> UIButton {
@@ -152,5 +172,11 @@ private extension LibraryActiveFiltersHeaderView {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.setContentHuggingPriority(.required, for: .horizontal)
         return button
+    }
+}
+
+extension LibraryActiveFiltersHeaderView: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
     }
 }

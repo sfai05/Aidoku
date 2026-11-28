@@ -507,7 +507,9 @@ import UIKit
         #expect(!LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 0, activeFilterCount: 1, isUpdatingResults: true))
         #expect(!LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 5, activeFilterCount: 1, isUpdatingResults: false))
     }
+}
 
+extension LibraryFilterSortTests {
     @MainActor
     @Test func sheetStateTracksCombinedResultCountAndUpdatingFlag() {
         let snapshot = snapshotUserDefaults()
@@ -593,5 +595,47 @@ import UIKit
             vc.forkFilterSortCoordinator.activeSheetState?.resultCount
                 == vc.viewModel.pinnedManga.count + vc.viewModel.manga.count
         )
+    }
+
+    @MainActor
+    @Test func activeFiltersHeaderEdgeFadeMaskUpdatesAcrossOverflowAndScroll() {
+        let header = LibraryActiveFiltersHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 38))
+        let singleChip = LibraryFilterSortHelpers.activeFilterChips(
+            for: [LibraryFilter(type: .hasUnread, value: nil, exclude: false)],
+            resolveSourceName: { $0 }
+        )
+
+        header.configure(chips: singleChip, onRemoveFilter: { _ in }, onClearAll: {})
+        header.layoutIfNeeded()
+        #expect(!header.isEdgeFadeMaskActive)
+        #expect(header.edgeFadeState == .none)
+
+        let manyFilters = (1...8).map { index in
+            LibraryFilter(type: .category, value: "Long Filter Category \(index)", exclude: index.isMultiple(of: 2))
+        }
+        let manyChips = LibraryFilterSortHelpers.activeFilterChips(for: manyFilters, resolveSourceName: { $0 })
+        header.configure(chips: manyChips, onRemoveFilter: { _ in }, onClearAll: {})
+        header.layoutIfNeeded()
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength - 1) < 0.01)
+
+        let maxOffsetX = header.scrollView.contentSize.width - header.scrollView.bounds.width
+        #expect(maxOffsetX > 40)
+
+        header.scrollView.setContentOffset(CGPoint(x: maxOffsetX / 2, y: 0), animated: false)
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength - 1) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength - 1) < 0.01)
+
+        header.scrollView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength - 1) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength) < 0.01)
+
+        header.configure(chips: singleChip, onRemoveFilter: { _ in }, onClearAll: {})
+        header.layoutIfNeeded()
+        #expect(!header.isEdgeFadeMaskActive)
+        #expect(header.edgeFadeState == .none)
     }
 }
