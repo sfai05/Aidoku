@@ -48,7 +48,7 @@ enum SyncError: LocalizedError, Equatable, Sendable {
             case let .corruptedSnapshot(detail):
                 "Corrupted sync snapshot: \(detail)"
             case let .unsupportedSchemaVersion(version):
-                "Unsupported sync snapshot schema version \(version). Please update Kodoku."
+                "Unsupported sync snapshot schema version \(version). Please update Dokuha."
             case let .conflictRetryExhausted(attempts):
                 "Sync failed after \(attempts) optimistic locking retries."
             case let .networkError(message):

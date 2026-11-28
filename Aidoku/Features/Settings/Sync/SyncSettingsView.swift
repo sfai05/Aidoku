@@ -336,7 +336,7 @@ struct SyncSettingsView: View {
             HStack {
                 Text(ForkL10n.string("SYNC_DEVICE_NAME_LABEL"))
                 Spacer()
-                TextField("Kodoku Device", text: $viewModel.deviceNameInput)
+                TextField("Dokuha Device", text: $viewModel.deviceNameInput)
                     .multilineTextAlignment(.trailing)
                     .onChange(of: viewModel.deviceNameInput) { _ in
                         viewModel.persistDeviceNameInput()

@@ -1,4 +1,4 @@
-"""Generate or update the SideStore/AltStore source JSON for Kodoku releases."""
+"""Generate or update the SideStore/AltStore source JSON for Dokuha releases."""
 
 from __future__ import annotations
 
@@ -129,7 +129,7 @@ def build_version_entry(
     """Build an AltStore/SideStore v2 version entry dictionary."""
     plain_notes = markdown_to_plain_text(notes)
     if not plain_notes:
-        plain_notes = f"Kodoku {metadata['version']} (build {metadata['buildVersion']})"
+        plain_notes = f"Dokuha {metadata['version']} (build {metadata['buildVersion']})"
 
     entry = {
         "version": metadata["version"],
@@ -207,7 +207,7 @@ def merge_source_json(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
-        description="Update Kodoku SideStore/AltStore source JSON from a built IPA."
+        description="Update Dokuha SideStore/AltStore source JSON from a built IPA."
     )
     parser.add_argument("--template", required=True, help="Path to template apps.json")
     parser.add_argument(

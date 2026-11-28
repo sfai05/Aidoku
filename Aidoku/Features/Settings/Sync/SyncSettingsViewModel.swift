@@ -204,12 +204,12 @@ final class SyncSettingsViewModel: ObservableObject {
 
     func persistDeviceNameInput() {
         let trimmed = deviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        engine.configuration.deviceName = trimmed.isEmpty ? "Kodoku Device" : trimmed
+        engine.configuration.deviceName = trimmed.isEmpty ? "Dokuha Device" : trimmed
     }
 
     func updateDeviceName() {
         let trimmed = deviceNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolved = trimmed.isEmpty ? "Kodoku Device" : trimmed
+        let resolved = trimmed.isEmpty ? "Dokuha Device" : trimmed
         deviceNameInput = resolved
         engine.configuration.deviceName = resolved
     }

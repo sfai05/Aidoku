@@ -35,7 +35,7 @@ enum SyncKeychainAccount {
 final class SyncKeychainStore: SyncKeychainStoreProtocol {
     let service: String
 
-    init(service: String = "\(Bundle.main.bundleIdentifier ?? "io.github.sfai05.Kodoku").forksync") {
+    init(service: String = "\(Bundle.main.bundleIdentifier ?? "io.github.sfai05.Dokuha").forksync") {
         self.service = service
     }
 

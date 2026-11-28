@@ -239,7 +239,7 @@ struct SyncSettingsViewModelTests {
                     return (200, Data(#"{"token":"jwt-user-refreshed","record":{"id":"user-new","email":"new@example.com"}}"#.utf8))
                 },
                 { request in
-                    #expect(request.url?.path == "/api/collections/kodoku_sync_snapshots/records")
+                    #expect(request.url?.path == "/api/collections/dokuha_sync_snapshots/records")
                     return (200, Data(#"{"items":[]}"#.utf8))
                 }
             ],
@@ -290,7 +290,7 @@ struct SyncSettingsViewModelTests {
                     return (200, Data(#"{"token":"su-jwt-1","record":{"id":"su_1"}}"#.utf8))
                 },
                 { request in
-                    #expect(request.url?.path == "/api/collections/kodoku_sync_snapshots")
+                    #expect(request.url?.path == "/api/collections/dokuha_sync_snapshots")
                     return (404, Data(#"{"status":404}"#.utf8))
                 },
                 { request in

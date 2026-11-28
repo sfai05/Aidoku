@@ -114,7 +114,7 @@ final class SyncConfiguration: @unchecked Sendable {
             if let existing = userDefaults.string(forKey: Key.deviceName), !existing.isEmpty {
                 return existing
             }
-            return "Kodoku Device"
+            return "Dokuha Device"
         }
         set {
             lock.lock()
@@ -133,7 +133,7 @@ final class SyncConfiguration: @unchecked Sendable {
         }()
         if needsName {
             let name = UIDevice.current.name
-            deviceName = name.isEmpty ? "Kodoku Device" : name
+            deviceName = name.isEmpty ? "Dokuha Device" : name
         }
     }
 

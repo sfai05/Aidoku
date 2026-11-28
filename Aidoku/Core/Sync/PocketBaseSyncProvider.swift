@@ -575,7 +575,7 @@ extension PocketBaseSyncProvider: SyncStorageProvider {
             .appendingPathComponent(collectionName)
             .appendingPathComponent("records")
 
-        let boundary = "KodokuSync-\(UUID().uuidString)"
+        let boundary = "DokuhaSync-\(UUID().uuidString)"
         let multipartBody = buildMultipartBody(
             boundary: boundary,
             fields: [

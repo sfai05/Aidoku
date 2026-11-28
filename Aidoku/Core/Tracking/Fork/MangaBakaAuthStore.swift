@@ -2,7 +2,7 @@
 //  MangaBakaAuthStore.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/27/26.
+//  Created by Dokuha on 11/27/26.
 //
 
 import Foundation
@@ -11,7 +11,7 @@ import Foundation
 final class MangaBakaAuthStore: @unchecked Sendable {
     static let shared = MangaBakaAuthStore(
         keychain: SyncKeychainStore(
-            service: "\(Bundle.main.bundleIdentifier ?? "io.github.sfai05.Kodoku").mangabaka"
+            service: "\(Bundle.main.bundleIdentifier ?? "io.github.sfai05.Dokuha").mangabaka"
         )
     )
     static let keychainAccount = "mangabaka.apiKey"

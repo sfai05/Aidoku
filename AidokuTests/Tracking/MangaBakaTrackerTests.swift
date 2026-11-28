@@ -2,7 +2,7 @@
 //  MangaBakaTrackerTests.swift
 //  AidokuTests
 //
-//  Created by Kodoku on 11/27/26.
+//  Created by Dokuha on 11/27/26.
 //
 
 @testable import Aidoku

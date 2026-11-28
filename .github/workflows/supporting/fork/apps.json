@@ -1,22 +1,22 @@
 {
-  "name": "Kodoku",
-  "identifier": "io.github.sfai05.kodoku.source",
+  "name": "Dokuha",
+  "identifier": "io.github.sfai05.dokuha.source",
   "sourceURL": "https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json",
-  "subtitle": "SideStore & AltStore source for Kodoku (free Apple ID fork of Aidoku)",
-  "description": "SideStore and AltStore source for Kodoku, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
+  "subtitle": "SideStore & AltStore source for Dokuha (free Apple ID fork of Aidoku)",
+  "description": "SideStore and AltStore source for Dokuha, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
   "website": "https://github.com/sfai05/Aidoku",
   "iconURL": "https://raw.githubusercontent.com/sfai05/Aidoku/main/Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png",
   "tintColor": "1F6BFF",
   "featuredApps": [
-    "io.github.sfai05.Kodoku"
+    "io.github.sfai05.Dokuha"
   ],
   "apps": [
     {
-      "name": "Kodoku",
-      "bundleIdentifier": "io.github.sfai05.Kodoku",
+      "name": "Dokuha",
+      "bundleIdentifier": "io.github.sfai05.Dokuha",
       "developerName": "sfai05 (Fork of Aidoku by Skitty)",
       "subtitle": "Open-source manga reader for iOS and iPadOS (Aidoku fork)",
-      "localizedDescription": "Kodoku is an open-source fork of Aidoku built for free Apple ID sideloading via SideStore/AltStore, with planned self-hostable sync and manga management enhancements. Licensed under GPLv3.",
+      "localizedDescription": "Dokuha is an open-source fork of Aidoku built for free Apple ID sideloading via SideStore/AltStore, with self-hostable PocketBase cross-device sync and manga management enhancements. Licensed under GPLv3.",
       "iconURL": "https://raw.githubusercontent.com/sfai05/Aidoku/main/Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png",
       "tintColor": "1F6BFF",
       "category": "entertainment",

@@ -7,6 +7,6 @@
 // (iOS Simulator tests sign ad-hoc without a team; physical-device tests require DEVELOPMENT_TEAM).
 //
 // DEVELOPMENT_TEAM = YOUR_PERSONAL_TEAM_ID
-// APP_DISPLAY_NAME = Kodoku
+// APP_DISPLAY_NAME = Dokuha
 // APP_ID_PREFIX    = io.github.sfai05
-// APP_ID_SUFFIX    = Kodoku
+// APP_ID_SUFFIX    = Dokuha

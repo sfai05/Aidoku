@@ -2,14 +2,14 @@
 //  MetadataEnrichmentService.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/27/26.
+//  Created by Dokuha on 11/27/26.
 //
 
 import Foundation
 
 /// Fetches optional original-language staff names (AniList) and localized synopsis candidates (MangaDex & Bangumi).
 struct MetadataEnrichmentService: Sendable {
-    private static let userAgent = "Kodoku/1.0 (https://github.com/sfai05/Aidoku)"
+    private static let userAgent = "Dokuha/1.0 (https://github.com/sfai05/Aidoku)"
     private static let requestTimeout: TimeInterval = 8
 
     private let session: URLSession

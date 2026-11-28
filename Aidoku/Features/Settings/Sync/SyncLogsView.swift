@@ -214,7 +214,7 @@ struct SyncLogsView: View {
 
     private func exportLogs() async {
         let text = await logStore.exportText()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("kodoku-sync-logs.txt")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("dokuha-sync-logs.txt")
         guard let data = text.data(using: .utf8) else { return }
         do {
             try data.write(to: url, options: .atomic)

@@ -2,7 +2,7 @@
 //  SyncBackgroundFlushTests.swift
 //  AidokuTests
 //
-//  Created by Kodoku contributors.
+//  Created by Dokuha contributors.
 //
 
 @testable import Aidoku
