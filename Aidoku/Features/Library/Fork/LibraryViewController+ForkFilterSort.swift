@@ -31,15 +31,6 @@ extension LibraryViewController {
         )
     }
 
-    func makeActiveFiltersRegistration() -> UICollectionView.SupplementaryRegistration<LibraryActiveFiltersHeaderView> {
-        UICollectionView.SupplementaryRegistration<LibraryActiveFiltersHeaderView>(
-            elementKind: LibraryActiveFiltersHeaderView.elementKind
-        ) { [weak self] header, _, _ in
-            guard let self else { return }
-            self.configureActiveFiltersHeader(header)
-        }
-    }
-
     func configureActiveFiltersHeader(_ header: LibraryActiveFiltersHeaderView) {
         header.configure(
             chips: buildActiveFilterChips(),
@@ -77,15 +68,21 @@ extension LibraryViewController {
     }
 
     func refreshActiveFiltersHeader() {
-        let shouldShow = !viewModel.filters.isEmpty && !locked
+        let showCategories = shouldShowCategoryBar
+        let shouldShow = shouldShowActiveFiltersBar
         if shouldShow != forkFilterSortCoordinator.isShowingActiveFiltersHeader {
             collectionView.collectionViewLayout = makeCollectionViewLayout()
         }
-        if shouldShow {
-            for case let header as LibraryActiveFiltersHeaderView in collectionView.visibleSupplementaryViews(
-                ofKind: LibraryActiveFiltersHeaderView.elementKind
-            ) {
-                configureActiveFiltersHeader(header)
+        for case let header as LibraryTopHeaderView in collectionView.visibleSupplementaryViews(
+            ofKind: UICollectionView.elementKindSectionHeader
+        ) {
+            header.configureVisibility(showCategories: showCategories, showActiveFilters: shouldShow)
+            if showCategories {
+                header.categoryBarView.delegate = self
+                header.categoryBarView.configure(with: buildCategoryBarSnapshot(), animatedScroll: false)
+            }
+            if shouldShow {
+                configureActiveFiltersHeader(header.activeFiltersView)
             }
         }
     }
@@ -118,6 +115,7 @@ extension LibraryViewController {
         )
 
         let controller = UIHostingController(rootView: sheetView)
+        controller.view.backgroundColor = .systemBackground
         if let sheet = controller.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
             sheet.prefersGrabberVisible = true

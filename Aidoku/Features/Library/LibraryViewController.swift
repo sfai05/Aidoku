@@ -120,18 +120,9 @@ class LibraryViewController: OldMangaCollectionViewController {
         title = NSLocalizedString("LIBRARY")
 
         navigationController?.navigationBar.prefersLargeTitles = true
-        navigationItem.hidesSearchBarWhenScrolling = false
+        // Fork: Omit redundant in-library search bar since Search lives in the tab bar
 
         collectionView.keyboardDismissMode = .onDrag
-
-        // search controller
-        let searchController = UISearchController(searchResultsController: nil)
-        searchController.searchResultsUpdater = self
-        searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = viewModel.currentCategory == nil
-            ? NSLocalizedString("LIBRARY_SEARCH")
-            : NSLocalizedString("CATEGORY_SEARCH")
-        navigationItem.searchController = searchController
 
         // navbar buttons
         updateMoreMenu()
@@ -169,21 +160,13 @@ class LibraryViewController: OldMangaCollectionViewController {
         collectionView.allowsMultipleSelection = !ProcessInfo.processInfo.isMacCatalystApp
         collectionView.allowsSelectionDuringEditing = true
 
-        // Fork: Horizontal scrollable category pill bar header
-        let registration = makeCategoryBarRegistration()
-
-        // Fork: Active filter chips strip registration
-        let activeFiltersRegistration = makeActiveFiltersRegistration()
+        // Fork: Stacked category pill bar and active filter chips header
+        let registration = makeTopHeaderRegistration()
 
         dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
             if kind == UICollectionView.elementKindSectionHeader {
                 return collectionView.dequeueConfiguredReusableSupplementary(
                     using: registration,
-                    for: indexPath
-                )
-            } else if kind == LibraryActiveFiltersHeaderView.elementKind {
-                return collectionView.dequeueConfiguredReusableSupplementary(
-                    using: activeFiltersRegistration,
                     for: indexPath
                 )
             }
@@ -453,30 +436,21 @@ class LibraryViewController: OldMangaCollectionViewController {
         let config = UICollectionViewCompositionalLayoutConfiguration()
         config.interSectionSpacing = layout.configuration.interSectionSpacing
         var boundaryItems: [NSCollectionLayoutBoundarySupplementaryItem] = []
-        if !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty {
-            let globalHeader = NSCollectionLayoutBoundarySupplementaryItem(
+        let showCategories = shouldShowCategoryBar
+        let showActiveFilters = shouldShowActiveFiltersBar
+        // Fork: Single stacked top header prevents category bar and filter chips from overlapping
+        let topHeaderHeight = (showCategories ? LibraryTopHeaderView.categoryBarHeight : 0)
+            + (showActiveFilters ? LibraryTopHeaderView.activeFiltersHeight : 0)
+        if topHeaderHeight > 0 {
+            let topHeader = NSCollectionLayoutBoundarySupplementaryItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1),
-                    // Fork: 44pt height for horizontal category pill bar
-                    heightDimension: .absolute(44)
+                    heightDimension: .absolute(topHeaderHeight)
                 ),
                 elementKind: UICollectionView.elementKindSectionHeader,
                 alignment: .top
             )
-            boundaryItems.append(globalHeader)
-        }
-        // Fork: Show removable active filter chips above the library grid when filters are enabled
-        let showActiveFilters = !viewModel.filters.isEmpty && !locked
-        if showActiveFilters {
-            let filtersHeader = NSCollectionLayoutBoundarySupplementaryItem(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .absolute(38)
-                ),
-                elementKind: LibraryActiveFiltersHeaderView.elementKind,
-                alignment: .top
-            )
-            boundaryItems.append(filtersHeader)
+            boundaryItems.append(topHeader)
         }
         forkFilterSortCoordinator.isShowingActiveFiltersHeader = showActiveFilters
         config.boundarySupplementaryItems = boundaryItems

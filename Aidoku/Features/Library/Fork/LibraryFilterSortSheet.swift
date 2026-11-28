@@ -8,11 +8,6 @@
 import SwiftUI
 
 struct LibraryFilterSortSheet: View {
-    enum Tab: Int, CaseIterable {
-        case filter
-        case sort
-    }
-
     @ObservedObject var state: LibraryFilterSortState
     let resolveSourceName: (String) -> String
     let onToggleFilter: (LibraryFilter.FilterMethod, String?) -> Void
@@ -21,8 +16,6 @@ struct LibraryFilterSortSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedTab: Tab = .filter
-    @State private var isContentRatingExpanded: Bool
     @State private var isSourcesExpanded: Bool
     @State private var isCategoriesExpanded: Bool
 
@@ -39,14 +32,21 @@ struct LibraryFilterSortSheet: View {
         self.onClearFilters = onClearFilters
         self.onSelectSort = onSelectSort
 
-        self._isContentRatingExpanded = State(
-            initialValue: state.filters.contains { $0.type == .contentRating }
+        let availableSources = LibraryFilterSortHelpers.mergedFilterOptions(
+            available: state.sourceKeys,
+            activeFilters: state.filters,
+            method: .source
+        )
+        let availableCategories = LibraryFilterSortHelpers.mergedFilterOptions(
+            available: state.categories,
+            activeFilters: state.filters,
+            method: .category
         )
         self._isSourcesExpanded = State(
-            initialValue: state.filters.contains { $0.type == .source }
+            initialValue: availableSources.count <= 8 || state.filters.contains { $0.type == .source }
         )
         self._isCategoriesExpanded = State(
-            initialValue: state.filters.contains { $0.type == .category }
+            initialValue: availableCategories.count <= 8 || state.filters.contains { $0.type == .category }
         )
     }
 
@@ -67,58 +67,135 @@ struct LibraryFilterSortSheet: View {
     }
 
     var body: some View {
-        PlatformNavigationStack {
-            VStack(spacing: 0) {
-                Picker(ForkL10n.string("LIBRARY_FILTER_SORT_TITLE"), selection: $selectedTab) {
-                    Text(filterTabTitle).tag(Tab.filter)
-                    Text(ForkL10n.string("LIBRARY_SORT_TAB")).tag(Tab.sort)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
+        if #available(iOS 16.4, *) {
+            navigationContent
+                .presentationBackground(Color(uiColor: .systemBackground))
+        } else {
+            navigationContent
+        }
+    }
 
-                List {
-                    switch selectedTab {
-                        case .filter:
-                            filterSections
-                        case .sort:
-                            sortSections
+    @ViewBuilder
+    private var navigationContent: some View {
+        PlatformNavigationStack {
+            ZStack {
+                Color(uiColor: .systemBackground)
+                    .ignoresSafeArea()
+
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        sortSection
+                        filtersSection
+                        contentRatingSection
+
+                        if !mergedSourceKeys.isEmpty {
+                            collapsibleChipSection(
+                                title: LibraryFilter.FilterMethod.source.title,
+                                activeCount: activeCount(for: .source),
+                                isExpanded: $isSourcesExpanded,
+                                items: mergedSourceKeys
+                            ) { key in
+                                filterChip(
+                                    title: resolveSourceName(key),
+                                    systemImage: nil,
+                                    triState: LibraryFilterSortHelpers.state(
+                                        for: .source,
+                                        value: key,
+                                        in: state.filters
+                                    )
+                                ) {
+                                    onToggleFilter(.source, key)
+                                }
+                            }
+                        }
+
+                        if !mergedCategories.isEmpty {
+                            collapsibleChipSection(
+                                title: LibraryFilter.FilterMethod.category.title,
+                                activeCount: activeCount(for: .category),
+                                isExpanded: $isCategoriesExpanded,
+                                items: mergedCategories
+                            ) { category in
+                                filterChip(
+                                    title: category,
+                                    systemImage: nil,
+                                    triState: LibraryFilterSortHelpers.state(
+                                        for: .category,
+                                        value: category,
+                                        in: state.filters
+                                    )
+                                ) {
+                                    onToggleFilter(.category, category)
+                                }
+                            }
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
             }
             .navigationTitle(ForkL10n.string("LIBRARY_FILTER_SORT_TITLE"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if !state.filters.isEmpty {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(NSLocalizedString("CLEAR"), role: .destructive) {
-                            onClearFilters()
-                        }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    DoneButton {
+                ToolbarItem(placement: .topBarTrailing) {
+                    CloseButton {
                         dismiss()
                     }
                 }
             }
         }
     }
-
-    private var filterTabTitle: String {
-        if state.activeFilterCount > 0 {
-            return ForkL10n.format("LIBRARY_FILTER_TAB_COUNT_FORMAT", state.activeFilterCount)
-        }
-        return NSLocalizedString("BUTTON_FILTER")
-    }
 }
 
 private extension LibraryFilterSortSheet {
-    @ViewBuilder
-    var filterSections: some View {
-        if state.isViewingFilterGroup, let groupTitle = state.activeFilterGroupTitle {
-            Section {
+    var sortSection: some View {
+        let directionTitle = state.sortAscending
+            ? state.sortMethod.ascendingTitle
+            : state.sortMethod.descendingTitle
+        let isUp = LibraryFilterSortHelpers.isVisuallyAscending(
+            method: state.sortMethod,
+            sortAscending: state.sortAscending
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle(ForkL10n.string("LIBRARY_SORT_TAB"))
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: isUp ? "arrow.up" : "arrow.down")
+                        .font(.caption.weight(.semibold))
+                    Text(directionTitle)
+                        .font(.caption.weight(.medium))
+                }
+                .foregroundStyle(.secondary)
+            }
+
+            chipFlow(items: LibraryViewModel.SortMethod.allCases) { method in
+                sortChip(for: method, isUp: isUp)
+            }
+        }
+    }
+
+    var filtersSection: some View {
+        let title = state.activeFilterCount > 0
+            ? ForkL10n.format("LIBRARY_FILTER_TAB_COUNT_FORMAT", state.activeFilterCount)
+            : NSLocalizedString("BUTTON_FILTER")
+        let availableMethods = LibraryFilter.FilterMethod.allCases.filter(\.isAvailable)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle(title)
+                Spacer()
+                if !state.filters.isEmpty {
+                    Button(NSLocalizedString("CLEAR"), role: .destructive) {
+                        onClearFilters()
+                    }
+                    .font(.subheadline.weight(.medium))
+                }
+            }
+
+            if state.isViewingFilterGroup, let groupTitle = state.activeFilterGroupTitle {
                 HStack(spacing: 10) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundStyle(.tint)
@@ -126,190 +203,217 @@ private extension LibraryFilterSortSheet {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.accentColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-        }
 
-        Section {
-            ForEach(LibraryFilter.FilterMethod.allCases.filter(\.isAvailable), id: \.self) { method in
-                filterRow(
+            chipFlow(items: availableMethods) { method in
+                filterChip(
                     title: method.title,
-                    systemImage: method.systemImageName,
+                    systemImage: methodSystemImage(method),
                     triState: LibraryFilterSortHelpers.state(for: method, in: state.filters)
                 ) {
                     onToggleFilter(method, nil)
                 }
             }
-        }
 
-        Section {
-            DisclosureGroup(isExpanded: $isContentRatingExpanded) {
-                ForEach(MangaContentRating.allCases, id: \.self) { rating in
-                    filterRow(
-                        title: rating.title,
-                        systemImage: nil,
-                        triState: LibraryFilterSortHelpers.state(
-                            for: .contentRating,
-                            value: rating.stringValue,
-                            in: state.filters
-                        )
-                    ) {
-                        onToggleFilter(.contentRating, rating.stringValue)
-                    }
+            Text(ForkL10n.string("LIBRARY_FILTER_TRISTATE_HINT"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    var contentRatingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                sectionTitle(LibraryFilter.FilterMethod.contentRating.title)
+                countBadge(activeCount(for: .contentRating))
+                Spacer()
+            }
+
+            chipFlow(items: MangaContentRating.allCases) { rating in
+                filterChip(
+                    title: rating.title,
+                    systemImage: nil,
+                    triState: LibraryFilterSortHelpers.state(
+                        for: .contentRating,
+                        value: rating.stringValue,
+                        in: state.filters
+                    )
+                ) {
+                    onToggleFilter(.contentRating, rating.stringValue)
+                }
+            }
+        }
+    }
+
+    func collapsibleChipSection<Item: Hashable, ChipContent: View>(
+        title: String,
+        activeCount: Int,
+        isExpanded: Binding<Bool>,
+        items: [Item],
+        @ViewBuilder chipContent: @escaping (Item) -> ChipContent
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.wrappedValue.toggle()
                 }
             } label: {
-                disclosureHeader(for: .contentRating)
-            }
-
-            if !mergedSourceKeys.isEmpty {
-                DisclosureGroup(isExpanded: $isSourcesExpanded) {
-                    ForEach(mergedSourceKeys, id: \.self) { key in
-                        filterRow(
-                            title: resolveSourceName(key),
-                            systemImage: nil,
-                            triState: LibraryFilterSortHelpers.state(
-                                for: .source,
-                                value: key,
-                                in: state.filters
-                            )
-                        ) {
-                            onToggleFilter(.source, key)
-                        }
-                    }
-                } label: {
-                    disclosureHeader(for: .source)
+                HStack(spacing: 8) {
+                    sectionTitle(title)
+                    countBadge(activeCount)
+                    Spacer()
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            if !mergedCategories.isEmpty {
-                DisclosureGroup(isExpanded: $isCategoriesExpanded) {
-                    ForEach(mergedCategories, id: \.self) { category in
-                        filterRow(
-                            title: category,
-                            systemImage: nil,
-                            triState: LibraryFilterSortHelpers.state(
-                                for: .category,
-                                value: category,
-                                in: state.filters
-                            )
-                        ) {
-                            onToggleFilter(.category, category)
-                        }
-                    }
-                } label: {
-                    disclosureHeader(for: .category)
-                }
-            }
-        } footer: {
-            Text(ForkL10n.string("LIBRARY_FILTER_TRISTATE_HINT"))
-        }
-    }
-
-    var sortSections: some View {
-        Section {
-            ForEach(LibraryViewModel.SortMethod.allCases, id: \.self) { method in
-                let isSelected = state.sortMethod == method
-                let directionTitle = state.sortAscending ? method.ascendingTitle : method.descendingTitle
-                let isUp = LibraryFilterSortHelpers.isVisuallyAscending(
-                    method: method,
-                    sortAscending: state.sortAscending
-                )
-
-                Button {
-                    onSelectSort(method)
-                } label: {
-                    HStack(spacing: 12) {
-                        Text(method.title)
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if isSelected {
-                            HStack(spacing: 4) {
-                                Text(directionTitle)
-                                    .font(.caption.weight(.medium))
-                                Image(systemName: isUp ? "arrow.up" : "arrow.down")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .foregroundStyle(.tint)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.accentColor.opacity(0.14))
-                            .clipShape(Capsule())
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        } footer: {
-            Text(ForkL10n.string("LIBRARY_SORT_TAP_HINT"))
-        }
-    }
-
-    func disclosureHeader(for method: LibraryFilter.FilterMethod) -> some View {
-        let count = state.filters.filter { $0.type == method }.count
-        return HStack(spacing: 12) {
-            Image(systemName: method.systemImageName)
-                .frame(width: 24)
-                .foregroundStyle(.tint)
-            Text(method.title)
-                .foregroundStyle(.primary)
-            Spacer()
-            if count > 0 {
-                Text("\(count)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tint)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor.opacity(0.14))
-                    .clipShape(Capsule())
+            if isExpanded.wrappedValue {
+                chipFlow(items: items, content: chipContent)
             }
         }
     }
 
-    func filterRow(
+    func sortChip(for method: LibraryViewModel.SortMethod, isUp: Bool) -> some View {
+        let isSelected = state.sortMethod == method
+        return Button {
+            onSelectSort(method)
+        } label: {
+            HStack(spacing: 5) {
+                Text(method.title)
+                    .font(.subheadline.weight(isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+                if isSelected {
+                    Image(systemName: isUp ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.accentColor : Color(uiColor: .secondarySystemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? Color.clear : Color(uiColor: .separator).opacity(0.35),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    func filterChip(
         title: String,
         systemImage: String?,
         triState: LibraryFilterTriState,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .frame(width: 24)
-                        .foregroundStyle(.tint)
+        let backgroundColor: Color = switch triState {
+            case .off: Color(uiColor: .secondarySystemBackground)
+            case .included: .accentColor
+            case .excluded: Color(uiColor: .systemRed)
+        }
+        let foregroundColor: Color = triState == .off ? .primary : .white
+        let leadingIcon: String? = switch triState {
+            case .off: systemImage
+            case .included: "checkmark"
+            case .excluded: "xmark"
+        }
+
+        return Button(action: action) {
+            HStack(spacing: 6) {
+                if let leadingIcon {
+                    Image(systemName: leadingIcon)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(triState == .off ? Color.secondary : Color.white)
                 }
-
                 Text(title)
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                triStateIndicator(for: triState)
+                    .font(.subheadline.weight(triState == .off ? .medium : .semibold))
+                    .lineLimit(1)
             }
-            .contentShape(Rectangle())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .foregroundStyle(foregroundColor)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(backgroundColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        triState == .off ? Color(uiColor: .separator).opacity(0.35) : Color.clear,
+                        lineWidth: 1
+                    )
+            )
         }
         .buttonStyle(.plain)
         .accessibilityValue(accessibilityValue(for: triState))
     }
 
     @ViewBuilder
-    func triStateIndicator(for triState: LibraryFilterTriState) -> some View {
-        switch triState {
-            case .off:
-                Image(systemName: "circle")
-                    .font(.body)
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
-            case .included:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.tint)
-            case .excluded:
-                Image(systemName: "xmark.circle.fill")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.red)
+    func chipFlow<Item: Hashable, ChipContent: View>(
+        items: [Item],
+        @ViewBuilder content: @escaping (Item) -> ChipContent
+    ) -> some View {
+        if !items.isEmpty {
+            if #available(iOS 16.0, *) {
+                FilterChipFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        content(item)
+                    }
+                }
+            } else {
+                WrappingHStack(items, id: \.self) { item in
+                    content(item)
+                        .padding([.trailing, .bottom], 8)
+                }
+            }
         }
+    }
+
+    func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+    }
+
+    @ViewBuilder
+    func countBadge(_ count: Int) -> some View {
+        if count > 0 {
+            Text("\(count)")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tint)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.14))
+                .clipShape(Capsule())
+        }
+    }
+
+    func activeCount(for method: LibraryFilter.FilterMethod) -> Int {
+        state.filters.filter { $0.type == method }.count
+    }
+
+    func methodSystemImage(_ method: LibraryFilter.FilterMethod) -> String {
+        if method == .tracking {
+            if #available(iOS 18.0, *) {
+                return method.systemImageName
+            }
+            return "arrow.triangle.2.circlepath"
+        }
+        return method.systemImageName
     }
 
     func accessibilityValue(for triState: LibraryFilterTriState) -> String {
@@ -318,5 +422,80 @@ private extension LibraryFilterSortSheet {
             case .included: ForkL10n.string("LIBRARY_FILTER_STATE_INCLUDED")
             case .excluded: ForkL10n.string("LIBRARY_FILTER_STATE_EXCLUDED")
         }
+    }
+}
+
+@available(iOS 16.0, *)
+private struct FilterChipFlowLayout: Layout {
+    private struct PlacedItem {
+        let index: Int
+        let origin: CGPoint
+        let size: CGSize
+    }
+
+    private struct Arrangement {
+        let size: CGSize
+        let items: [PlacedItem]
+    }
+
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        arrange(maxWidth: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let arrangement = arrange(maxWidth: bounds.width, subviews: subviews)
+        for item in arrangement.items {
+            subviews[item.index].place(
+                at: CGPoint(x: bounds.minX + item.origin.x, y: bounds.minY + item.origin.y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(item.size)
+            )
+        }
+    }
+
+    private func arrange(maxWidth: CGFloat?, subviews: Subviews) -> Arrangement {
+        let availableWidth = maxWidth ?? .greatestFiniteMagnitude
+        let itemProposal = ProposedViewSize(
+            width: availableWidth.isFinite ? availableWidth : nil,
+            height: nil
+        )
+        var items: [PlacedItem] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widestRow: CGFloat = 0
+
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(itemProposal)
+            if currentX > 0 && currentX + horizontalSpacing + size.width > availableWidth {
+                widestRow = max(widestRow, currentX)
+                currentX = 0
+                currentY += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+            if currentX > 0 {
+                currentX += horizontalSpacing
+            }
+            items.append(PlacedItem(index: index, origin: CGPoint(x: currentX, y: currentY), size: size))
+            currentX += size.width
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        widestRow = max(widestRow, currentX)
+        let totalHeight = items.isEmpty ? 0 : currentY + rowHeight
+        let resolvedWidth = maxWidth.flatMap { $0.isFinite ? $0 : nil } ?? widestRow
+        return Arrangement(size: CGSize(width: resolvedWidth, height: totalHeight), items: items)
     }
 }

@@ -180,7 +180,6 @@ import UIKit
             )
         )
         #expect(fourItems.totalItemCount == 4)
-        #expect(!fourItems.shouldShowQuickJumpButton)
 
         let fiveItems = LibraryCategoryBarBuilder.build(
             LibraryCategoryBarInput(
@@ -193,7 +192,6 @@ import UIKit
             )
         )
         #expect(fiveItems.totalItemCount == 5)
-        #expect(fiveItems.shouldShowQuickJumpButton)
 
         let lockedFilterGroupOnly = LibraryCategoryBarBuilder.build(
             LibraryCategoryBarInput(
@@ -211,7 +209,7 @@ import UIKit
     }
 
     @MainActor
-    @Test func headerViewLayoutQuickJumpMenuAndDelegateBehavior() {
+    @Test func headerViewLayoutOverflowScrollAndDelegateBehavior() {
         let header = LibraryCategoryBarHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 44))
         let spy = SpyCategoryDelegate()
         header.delegate = spy
@@ -230,7 +228,6 @@ import UIKit
         header.layoutIfNeeded()
 
         #expect(header.pillButtons.count == 4)
-        #expect(header.isQuickJumpButtonHidden)
         #expect(spy.selectedPaths.isEmpty)
 
         let firstPill = header.pillButtons[0]
@@ -259,16 +256,9 @@ import UIKit
         header.configure(with: largeSnapshot)
         header.layoutIfNeeded()
 
-        #expect(!header.isQuickJumpButtonHidden)
-        #expect(header.quickJumpMenu?.children.count == 3)
         #expect(header.pillButtons.count == 6)
         #expect(header.pillButtons[5].isSelected)
         #expect(header.pillButtons[5].accessibilityLabel == "Ongoing")
-
-        let menuActions = (header.quickJumpMenu?.children.compactMap { $0 as? UIMenu } ?? [])
-            .flatMap { $0.children.compactMap { $0 as? UIAction } }
-        #expect(menuActions.first { $0.title == "Ongoing" }?.state == .on)
-        #expect(menuActions.first { $0.title == "Action" }?.state == .off)
 
         let longCategories = (1...10).map { "Category \($0) Collection" }
         let overflowSnapshot = LibraryCategoryBarBuilder.build(
@@ -287,7 +277,7 @@ import UIKit
     }
 
     @MainActor
-    @Test func libraryViewControllerUsesCategoryBarHeaderAndDualBoundaryLayout() async {
+    @Test func libraryViewControllerUsesStackedTopHeaderWithoutSearchBar() async {
         let snapshot = snapshotUserDefaults()
         defer { restoreUserDefaults(snapshot) }
 
@@ -306,6 +296,7 @@ import UIKit
         }
 
         vc.loadViewIfNeeded()
+        #expect(vc.navigationItem.searchController == nil)
         vc.viewModel.categories = ["Action", "Comedy"]
         vc.viewModel.filterGroups = [FilterGroup(title: "Ongoing", filters: [])]
         vc.viewModel.currentCategory = "Action"
@@ -316,20 +307,27 @@ import UIKit
         vc.view.layoutIfNeeded()
 
         let layoutConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
-        let categoryBoundary = layoutConfig?.boundarySupplementaryItems.first {
-            $0.elementKind == UICollectionView.elementKindSectionHeader
-        }
-        let filtersBoundary = layoutConfig?.boundarySupplementaryItems.first {
-            $0.elementKind == LibraryActiveFiltersHeaderView.elementKind
-        }
-        #expect(categoryBoundary?.layoutSize.heightDimension.dimension == 44)
-        #expect(filtersBoundary?.layoutSize.heightDimension.dimension == 38)
+        #expect(layoutConfig?.boundarySupplementaryItems.count == 1)
+        let topBoundary = layoutConfig?.boundarySupplementaryItems.first
+        #expect(topBoundary?.elementKind == UICollectionView.elementKindSectionHeader)
+        #expect(topBoundary?.layoutSize.heightDimension.dimension == 82)
 
-        let header = vc.collectionView
+        let topHeader = vc.collectionView
             .visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader)
-            .first as? LibraryCategoryBarHeaderView
-        #expect(header != nil)
-        #expect(header?.currentSnapshot?.selectedIndexPath == IndexPath(row: 0, section: 1))
+            .first as? LibraryTopHeaderView
+        #expect(topHeader != nil)
+        if let topHeader {
+            #expect(!topHeader.categoryBarView.isHidden)
+            #expect(!topHeader.activeFiltersView.isHidden)
+            let categoryFrame = topHeader.convert(topHeader.categoryBarView.bounds, from: topHeader.categoryBarView)
+            let filtersFrame = topHeader.convert(topHeader.activeFiltersView.bounds, from: topHeader.activeFiltersView)
+            #expect(abs(categoryFrame.height - 44) < 0.01)
+            #expect(abs(filtersFrame.height - 38) < 0.01)
+            #expect(abs(filtersFrame.minY - 44) < 0.01)
+            #expect(filtersFrame.minY >= categoryFrame.maxY)
+            #expect(!categoryFrame.intersects(filtersFrame))
+        }
+        #expect(topHeader?.categoryBarView.currentSnapshot?.selectedIndexPath == IndexPath(row: 0, section: 1))
 
         vc.viewModel.categories = ["Action", "Comedy", "Drama"]
         AppSettings.library.lockLibrary.set(true)
@@ -337,11 +335,25 @@ import UIKit
         vc.updateHeaderCategories()
         vc.updateHeaderLockIcons()
 
-        #expect(header?.currentSnapshot?.totalItemCount == 5)
-        #expect(header?.isQuickJumpButtonHidden == false)
-        #expect(header?.currentSnapshot?.allItems.first { $0.title == "Drama" }?.isLocked == true)
+        #expect(topHeader?.categoryBarView.currentSnapshot?.totalItemCount == 5)
+        #expect(topHeader?.categoryBarView.currentSnapshot?.allItems.first { $0.title == "Drama" }?.isLocked == true)
 
         vc.clearAllFilters()
+        let clearedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(clearedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 44)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+
+        vc.viewModel.categories = []
+        vc.viewModel.filterGroups = []
+        vc.toggleFilterFromSheet(method: .downloaded)
+        let filtersOnlyConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(filtersOnlyConfig?.boundarySupplementaryItems.count == 1)
+        #expect(filtersOnlyConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 38)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+
+        vc.clearAllFilters()
+        let neitherConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(neitherConfig?.boundarySupplementaryItems.isEmpty ?? false)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
     }
 }
