@@ -22,6 +22,7 @@ extension LibraryViewModel {
         filters = []
     }
 
+    // Persists sort settings synchronously so serialized coordinator reloads do not clash with upstream `setSort`.
     @discardableResult
     func applySortMutation(method: SortMethod, ascending: Bool) -> Bool {
         guard sortMethod != method || sortAscending != ascending else {

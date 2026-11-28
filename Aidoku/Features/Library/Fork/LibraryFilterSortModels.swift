@@ -103,7 +103,7 @@ enum LibraryFilterSortHelpers {
                 case .downloaded, .tracking, .hasUnread, .started, .completed:
                     filter.type.title
                 case .contentRating:
-                    filter.value.flatMap(MangaContentRating.init)?.title ?? filter.value ?? filter.type.title
+                    filter.value.flatMap(MangaContentRating.init(stringValue:))?.title ?? filter.value ?? filter.type.title
                 case .source:
                     filter.value.map(resolveSourceName) ?? filter.type.title
                 case .category:
@@ -139,28 +139,29 @@ final class LibraryFilterSortState: ObservableObject {
     }
 
     init(viewModel: LibraryViewModel) {
+        let groupTitle = Self.resolveFilterGroupTitle(from: viewModel)
         self.filters = viewModel.filters
         self.sortMethod = viewModel.sortMethod
         self.sortAscending = viewModel.sortAscending
         self.sourceKeys = viewModel.sourceKeys
         self.categories = viewModel.categories
-        let viewingGroup = viewModel.currentCategory.flatMap { title in
-            viewModel.filterGroups.contains { $0.title == title }
-        } ?? false
-        self.isViewingFilterGroup = viewingGroup
-        self.activeFilterGroupTitle = viewingGroup ? viewModel.currentCategory : nil
+        self.isViewingFilterGroup = groupTitle != nil
+        self.activeFilterGroupTitle = groupTitle
     }
 
     func update(from viewModel: LibraryViewModel) {
+        let groupTitle = Self.resolveFilterGroupTitle(from: viewModel)
         filters = viewModel.filters
         sortMethod = viewModel.sortMethod
         sortAscending = viewModel.sortAscending
         sourceKeys = viewModel.sourceKeys
         categories = viewModel.categories
-        let viewingGroup = viewModel.currentCategory.flatMap { title in
-            viewModel.filterGroups.contains { $0.title == title }
-        } ?? false
-        isViewingFilterGroup = viewingGroup
-        activeFilterGroupTitle = viewingGroup ? viewModel.currentCategory : nil
+        isViewingFilterGroup = groupTitle != nil
+        activeFilterGroupTitle = groupTitle
+    }
+
+    private static func resolveFilterGroupTitle(from viewModel: LibraryViewModel) -> String? {
+        guard let title = viewModel.currentCategory else { return nil }
+        return viewModel.filterGroups.contains { $0.title == title } ? title : nil
     }
 }

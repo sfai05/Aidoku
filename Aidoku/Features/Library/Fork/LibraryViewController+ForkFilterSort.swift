@@ -15,6 +15,7 @@ final class LibraryFilterSortCoordinator {
     var reloadGeneration = 0
     var activeReloadTask: Task<Void, Never>?
     var pendingLibraryLoad = false
+    var pendingSortOnly = false
 }
 
 // MARK: - Fork: Dedicated Filter & Sort sheet and active filter chips
@@ -68,6 +69,7 @@ extension LibraryViewController {
             filterSortBarButton.tintColor = hasActiveFilters ? view.tintColor : nil
         }
 
+        filterSortBarButton.isEnabled = !locked
         filterSortBarButton.accessibilityLabel = ForkL10n.string("LIBRARY_FILTER_SORT_TITLE")
         filterSortBarButton.accessibilityValue = hasActiveFilters
             ? ForkL10n.format("LIBRARY_ACTIVE_FILTERS_COUNT_FORMAT", viewModel.filters.count)
@@ -79,14 +81,12 @@ extension LibraryViewController {
         if shouldShow != forkFilterSortCoordinator.isShowingActiveFiltersHeader {
             collectionView.collectionViewLayout = makeCollectionViewLayout()
         }
-        if
-            shouldShow,
-            let header = collectionView.supplementaryView(
-                forElementKind: LibraryActiveFiltersHeaderView.elementKind,
-                at: IndexPath(index: 0)
-            ) as? LibraryActiveFiltersHeaderView
-        {
-            configureActiveFiltersHeader(header)
+        if shouldShow {
+            for case let header as LibraryActiveFiltersHeaderView in collectionView.visibleSupplementaryViews(
+                ofKind: LibraryActiveFiltersHeaderView.elementKind
+            ) {
+                configureActiveFiltersHeader(header)
+            }
         }
     }
 
@@ -97,6 +97,7 @@ extension LibraryViewController {
     }
 
     @objc func openFilterSortSheet() {
+        guard !locked else { return }
         let state = LibraryFilterSortState(viewModel: viewModel)
         forkFilterSortCoordinator.activeSheetState = state
 
@@ -154,36 +155,45 @@ extension LibraryViewController {
         guard viewModel.applySortMutation(method: next.method, ascending: next.ascending) else {
             return
         }
-        triggerCoalescedReload(requiresFullLoad: forkFilterSortCoordinator.pendingLibraryLoad)
+        triggerCoalescedReload(requiresFullLoad: false)
     }
 
     private func triggerCoalescedReload(requiresFullLoad: Bool) {
+        forkFilterSortCoordinator.reloadGeneration &+= 1
         if requiresFullLoad {
             forkFilterSortCoordinator.pendingLibraryLoad = true
+        } else {
+            forkFilterSortCoordinator.pendingSortOnly = true
         }
         syncFilterSortUIState()
 
-        forkFilterSortCoordinator.activeReloadTask?.cancel()
-        forkFilterSortCoordinator.reloadGeneration &+= 1
-        let expectedGeneration = forkFilterSortCoordinator.reloadGeneration
-        let runFullLoad = forkFilterSortCoordinator.pendingLibraryLoad
+        guard forkFilterSortCoordinator.activeReloadTask == nil else {
+            return
+        }
 
         forkFilterSortCoordinator.activeReloadTask = Task { [weak self] in
-            guard let self else { return }
-            if runFullLoad {
-                await self.viewModel.loadLibrary()
-            } else {
-                await self.viewModel.sortLibrary()
-            }
-            guard !Task.isCancelled, self.forkFilterSortCoordinator.reloadGeneration == expectedGeneration else {
-                return
-            }
-            if runFullLoad {
+            while let self, !Task.isCancelled {
+                let runFullLoad = self.forkFilterSortCoordinator.pendingLibraryLoad
+                let runSort = self.forkFilterSortCoordinator.pendingSortOnly
+                guard runFullLoad || runSort else { break }
+
+                let generationAtStart = self.forkFilterSortCoordinator.reloadGeneration
                 self.forkFilterSortCoordinator.pendingLibraryLoad = false
+                self.forkFilterSortCoordinator.pendingSortOnly = false
+
+                if runFullLoad {
+                    await self.viewModel.loadLibrary()
+                } else {
+                    await self.viewModel.sortLibrary()
+                }
+
+                if self.forkFilterSortCoordinator.reloadGeneration == generationAtStart {
+                    self.updateEmptyStack()
+                    self.updateDataSource()
+                    self.syncFilterSortUIState()
+                }
             }
-            self.updateEmptyStack()
-            self.updateDataSource()
-            self.syncFilterSortUIState()
+            self?.forkFilterSortCoordinator.activeReloadTask = nil
         }
     }
 }

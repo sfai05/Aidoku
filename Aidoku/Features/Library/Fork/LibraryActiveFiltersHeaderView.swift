@@ -18,6 +18,9 @@ final class LibraryActiveFiltersHeaderView: UICollectionReusableView {
     private var onRemoveFilter: ((LibraryFilter) -> Void)?
     private var onClearAll: (() -> Void)?
 
+    var displayedChips: [LibraryActiveFilterChip] { currentChips }
+    var arrangedChipViews: [UIView] { stackView.arrangedSubviews }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         configureViews()
@@ -52,12 +55,13 @@ private extension LibraryActiveFiltersHeaderView {
     func configureViews() {
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
-        scrollView.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         addSubview(scrollView)
 
         stackView.axis = .horizontal
         stackView.alignment = .center
         stackView.spacing = 8
+        stackView.isLayoutMarginsRelativeArrangement = true
+        stackView.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
         scrollView.addSubview(stackView)
     }
 
@@ -107,10 +111,12 @@ private extension LibraryActiveFiltersHeaderView {
         let symbolConfig = UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)
         config.image = UIImage(systemName: "xmark", withConfiguration: symbolConfig)
 
-        let prefix = chip.isExcluded ? "" : "✓ "
         var titleAttributes = AttributeContainer()
-        titleAttributes.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
-        config.attributedTitle = AttributedString("\(prefix)\(chip.title)", attributes: titleAttributes)
+        titleAttributes.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+            for: .systemFont(ofSize: 12, weight: .semibold),
+            maximumPointSize: 16
+        )
+        config.attributedTitle = AttributedString(chip.title, attributes: titleAttributes)
 
         let button = UIButton(
             configuration: config,
@@ -130,7 +136,10 @@ private extension LibraryActiveFiltersHeaderView {
         config.baseForegroundColor = .secondaryLabel
 
         var titleAttributes = AttributeContainer()
-        titleAttributes.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        titleAttributes.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+            for: .systemFont(ofSize: 12, weight: .medium),
+            maximumPointSize: 16
+        )
         config.attributedTitle = AttributedString(NSLocalizedString("CLEAR_FILTERS"), attributes: titleAttributes)
 
         let button = UIButton(

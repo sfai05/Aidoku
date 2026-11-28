@@ -90,8 +90,8 @@ struct LibraryFilterSortSheet: View {
             .navigationTitle(ForkL10n.string("LIBRARY_FILTER_SORT_TITLE"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    if !state.filters.isEmpty {
+                if !state.filters.isEmpty {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button(NSLocalizedString("CLEAR"), role: .destructive) {
                             onClearFilters()
                         }
