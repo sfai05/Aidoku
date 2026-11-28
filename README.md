@@ -1,83 +1,111 @@
-# Dokuha (`sfai05/Aidoku` Fork)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Aidoku/App/Resources/AppIcon.icon/Assets/dark.png">
+    <img src="Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png" width="112" alt="Dokuha App Icon">
+  </picture>
+</p>
 
-**Dokuha** (`io.github.sfai05.Dokuha`) is a personal fork of [Aidoku](https://github.com/Aidoku/Aidoku) designed for **free Apple ID / SideStore sideloading** and **self-hostable cross-device sync via PocketBase**, while keeping upstream merges minimal and cleanly isolated.
+<h1 align="center">Dokuha</h1>
 
-## Differences vs. Upstream Aidoku
+<p align="center">
+  Personal fork of <a href="https://github.com/Aidoku/Aidoku">Aidoku</a> (<code>io.github.sfai05.Dokuha</code>) built for <strong>self-hostable PocketBase cross-device sync</strong>, <strong>richer metadata management</strong>, <strong>hardened MangaBaka tracking</strong>, and <strong>one-tap library filtering &amp; navigation</strong>.
+</p>
 
-| Area | Upstream Aidoku | Dokuha (`sfai05/Aidoku`) |
-|---|---|---|
-| **Signing & Entitlements** | Uses CloudKit, Push Notifications (`aps-environment`), and custom fonts entitlement | Removes paid-developer-only entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity, `user-fonts`, `remote-notification`) so it builds and runs cleanly with a free Apple ID (Personal Team); keeps local notifications and `BGProcessingTask` / `fetch` |
-| **Cross-Device Sync** | `NSPersistentCloudKitContainer` (iCloud / CloudKit) | **PocketBase Sync Engine** (`SyncStorageProvider` + `SyncEnvelope` gzip snapshots with `revision` optimistic locking, SHA-256 verification, tombstones, and non-destructive background smart merge) |
-| **Sync Triggers & Battery** | Black-box iOS CloudKit & APNs scheduling | 60s default change debounce (configurable 5–120s), automatic foreground pull, lock-screen / background `UIBackgroundTask` flush, and disk flush on termination |
-| **Sync UI & Recovery** | Single iCloud Sync toggle | Dedicated **Settings → PocketBase Sync** dashboard (Green/Yellow/Red indicator, counts, setup wizard using transient Superuser credentials or manual `docs/sync/pb_schema.json` import, Keychain-only `users` auth, Sync Logs viewer, Force Sync/Push/Pull, historical snapshot rollback, cleanup, and cursor reset) |
-| **Metadata Editing & MangaBaka Pull** | Basic cover customization & source refresh locks | In-app **Edit Metadata** editor (`...` menu for bookmarked & local manga covering Cover, Title, Authors, Artists, Status, Content Rating, Description, Tags + per-field source reset) and **MangaBaka Pull** diff sheet (tracked-gated, multi-language title & description picking from MangaBaka + MangaDex/Bangumi including auto Traditional Chinese conversion, original-language author/artist names via AniList, browsable all-covers volume gallery picker via MangaBaka `/images`, Content Rating mapping, local-only `Title Language Priority`, and PocketBase per-field `EditedKeys` sync preservation) |
-| **MangaBaka Tracking & Auth** | OAuth only (frequent session drops, `Int`-only progress decoding, silent `PATCH`/404 failures) | Supports long-lived **Personal Access Token (`mb-...` via `x-api-key`)** stored in iOS Keychain and verified via `/v1/my/profile` (non-destructive switching preserves tracked manga links), hardened OAuth refresh (RFC 3986 form encoding, concurrent refresh coalescing, token preservation on transient errors), decimal chapter/volume/rating decoding, remote 404 fallback + `POST` auto-create, `en_US_POSIX` `YYYY-MM-DD` date handling, and fixed `finish_date` encoding |
-| **Library Filter & Sort** | Buried in `...` submenus; menu checkmarks fail to update live on tap | Dedicated top-bar Filter & Sort button opening a grouped-card SwiftUI sheet (or bar-button popover on regular-width iPad) with live matching title count, single-row horizontal Sort bar, tri-state Filter pills (include / exclude / clear), direct Content Rating pills, expandable Sources / Categories cards, tuned initial detent height, a non-overlapping removable active filter chips strip with dynamic horizontal scroll edge fade stacked below the category bar, and a quick `Clear Filters` empty-state action |
-| **Library Category Bar** | Single dropdown menu (`All v`) requiring two taps to switch categories + redundant search bar | One-tap edge-to-edge horizontal scrollable capsule pill bar with dynamic scroll edge fade, lock indicators, distinct Filter Group pill styling, auto-scroll to active selection, and strengthened cover title contrast scrim (redundant in-library search bar removed in favor of the tab-bar Search tab) |
-| **App Icon & Branding** | Blue Aidoku (`読`) icon | **Dokuha** (`読破！` with `ドク`/`ハ` furigana) monochrome manga screentone app icon with matched **Light** and **Dark** (and Tinted) variants in `AppIcon.icon`, plus flat fallback PNGs for SideStore/AltStore in `Assets.xcassets/AppIcon.appiconset` |
-| **Upstream Isolation** | Core codebase + `Localizable.strings` | New fork code lives cleanly in `Aidoku/Core/Sync/`, `Aidoku/Features/Settings/Sync/`, `Aidoku/Core/Metadata/`, `Aidoku/Features/Manga/Metadata/`, `Aidoku/Features/Library/Fork/`, `Aidoku/Core/Tracking/Fork/`, and `Aidoku/Features/Settings/Tracking/` with separate `ForkLocalizable.strings` (`en` / `zh-Hant`), `ForkSync.`/`Fork.` defaults keys, isolated fork CI workflows (`fork-release.yml`, Ubuntu-based `fork-lint.yml`), and zero edits to `Aidoku.xcdatamodeld` or `project.pbxproj` |
-
-### Installing Dokuha (SideStore / AltStore)
-
-1. Open **SideStore** (recommended) or **AltStore**, navigate to **Sources**, and add:
-   ```
-   https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json
-   ```
-2. Install **Dokuha** (or upgrade in-place when new builds publish), or download the latest unsigned `.ipa` from [GitHub Releases](https://github.com/sfai05/Aidoku/releases).
-3. To enable cross-device sync, open **Settings → PocketBase Sync**, create the collection with the **One-Time Setup Wizard** (or import `docs/sync/pb_schema.json` in PocketBase Admin UI `/_/`), and sign in with a regular PocketBase **`users`** collection account on each device.
-
-> Note: Sync transfers your library, manga edits, reading history, chapters, categories, tracking links, reading sessions, updates, vocabulary, custom source configs, and source list URLs. Safe app settings are **off by default** (and sensitive keys matching `login`/`password`/`token`/`auth`/`cookie` are stripped even when enabled). External `.aix` sources and offline downloads are installed per device.
->
-> Note: User-initiated **Pull from MangaBaka** actions query public, unauthenticated third-party endpoints (AniList, MangaDex, and Bangumi) using the tracked series ID or title solely to enrich original-language staff names and localized synopses. No user credentials or personal data are sent.
+<p align="center">
+  <img src="docs/images/library-overview.png" width="23%" alt="Dokuha Library with Category Pill Bar and Active Filter Chips">
+  <img src="docs/images/library-filter-sort.png" width="23%" alt="Dokuha Library Filter and Sort Sheet">
+  <img src="docs/images/pocketbase-sync.png" width="23%" alt="Dokuha PocketBase Sync Dashboard">
+  <img src="docs/images/mangabaka-metadata-pull.png" width="23%" alt="Dokuha Pull from MangaBaka Diff Sheet">
+</p>
 
 ---
 
-## Upstream Aidoku README
+## What's Different from Aidoku
 
-# Aidoku
+### TL;DR
 
-A free and open source manga reading application for iOS, iPadOS, and macOS.
+- **Self-Hostable PocketBase Sync:** Replaces CloudKit with an inspectable snapshot + smart-merge engine, Keychain-backed auth, 60s default debounce, and foreground/background flush.
+- **Sync Dashboard & Recovery Tools:** Adds a dedicated PocketBase Sync dashboard, One-Time Setup Wizard, `pb_schema.json` import, sync logs viewer, and rollback/force-sync tools.
+- **Metadata Editing & MangaBaka Pull:** Edit manga fields in-app with sync-preserved `EditedKeys`, or selectively pull multi-language titles/synopses, AniList native staff, and volume covers.
+- **Hardened MangaBaka Tracking:** Adds long-lived Personal Access Token (`mb-...`) auth alongside stabilized OAuth refresh, decimal progress/score decoding, and `POST` 404 fallback.
+- **Redesigned Library Controls:** Replaces the dropdown with a one-tap scrollable category pill bar, adds a Filter & Sort sheet/popover with tri-state filters and active filter chips, and strengthens cover title contrast.
 
-<p>
-	<img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/library-noframe.png" width="25%" alt="Library">
-	<img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/source-noframe.png" width="25%" alt="Source">
-	<img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/reader-noframe.png" width="25%" alt="Reader">
+### Self-Hostable PocketBase Cross-Device Sync
+
+- Replaces iCloud / CloudKit (`NSPersistentCloudKitContainer`) with an open, inspectable **PocketBase Sync Engine** behind a `SyncStorageProvider` protocol abstraction.
+- Wraps Aidoku's backup payload in gzip-compressed `SyncEnvelope` snapshots with optimistic `revision` locking, SHA-256 checksum verification, lightweight deletion tombstones, and a non-destructive background smart merge (newest `dateRead` wins for reading history; union + tombstone reconciliation for library entries, categories, tracker links, and `EditedKeys`).
+- Runs quietly with battery-friendly triggers: 60-second default change debounce (configurable from `5` to `120` seconds), automatic pull when returning to the foreground, lock-screen / background `UIBackgroundTask` flush, and pending-state flush on termination.
+- Uses security-first defaults: daily sync signs in with a regular PocketBase `users` account stored strictly in iOS Keychain, enforces owner-scoped API rules (`@request.auth.id != "" && owner = @request.auth.id`), keeps safe app settings sync off by default, and strips sensitive keys (`login`, `password`, `token`, `auth`, `cookie`) even when enabled.
+
+### Sync Dashboard, Setup Wizard & Recovery Tools
+
+- Replaces the single iCloud Sync switch with a dedicated **Settings → PocketBase Sync** dashboard featuring a Green / Yellow / Red status indicator, synced entity counts (Library, History, Categories, Trackers, Sessions), revision counter, and manual **Sync Now**.
+- Includes a **One-Time Setup Wizard** that creates or validates the PocketBase sync collection using transient Superuser credentials kept strictly in memory and immediately discarded, alongside a **Manual `pb_schema.json` Import** sheet ([`docs/sync/pb_schema.json`](docs/sync/pb_schema.json)) for least-privilege or shared servers.
+- Adds a filterable, copyable, exportable **Sync Logs** viewer and **Experimental & Recovery** controls for Force Sync, Force Push, Force Pull Latest, historical snapshot rollback, stale snapshot cleanup (configurable `2`–`50` snapshots retained), and local sync cursor reset.
+
+### In-App Metadata Editing & MangaBaka Pull
+
+- Adds an in-app **Edit Metadata** editor (accessible from the `…` menu for bookmarked and local manga) covering Cover (photo picker, remote URL, or source reset), Title, Authors, Artists, Publishing Status, Content Rating, Description, and Tags — with per-field edit locks (`EditedKeys`) preserved across PocketBase sync and per-field or full reset to source defaults.
+- Adds a selective **Pull from MangaBaka** diff sheet for MangaBaka-tracked series:
+  - Multi-language title and synopsis pickers combining MangaBaka, MangaDex, and Bangumi (including automatic Simplified-to-Traditional Chinese conversion for Bangumi descriptions), ranked by a local-only **Title Language Priority** order.
+  - Original-script vs. English author and artist switcher powered by AniList.
+  - Browsable volume and artwork cover gallery via MangaBaka `/images`, plus Content Rating mapping.
+- *Privacy note:* User-initiated **Pull from MangaBaka** actions query public, unauthenticated AniList, MangaDex, and Bangumi endpoints using only the tracked series ID or title solely to enrich staff names and localized synopses; no user credentials or personal data are sent.
+
+### Hardened MangaBaka Tracking & Personal Access Token (PAT) Auth
+
+- Adds long-lived **Personal Access Token (`mb-...` via `x-api-key`)** authentication stored in iOS Keychain and verified via `/v1/my/profile`, complete with scope checks and non-destructive switching between PAT and OAuth that keeps existing tracked manga links intact.
+- Hardens OAuth refresh behavior (RFC 3986 form encoding, concurrent refresh coalescing, and token preservation on transient errors) and fixes decimal chapter/volume/rating decoding, remote `404` fallback with `POST` auto-create, `en_US_POSIX` `YYYY-MM-DD` date parsing/formatting, and `finish_date` encoding.
+
+### Redesigned Library Navigation, Filter & Sort
+
+- **One-Tap Category Pill Bar:** Replaces the two-tap `All ▾` dropdown with an edge-to-edge horizontally scrollable capsule bar featuring dynamic horizontal scroll edge fade, category lock icons, distinct Filter Group pill styling, and automatic scroll-to-selection. Removes the redundant in-library search bar in favor of the dedicated Search tab.
+- **Dedicated Filter & Sort Sheet:** Adds a top-bar Filter & Sort button opening a grouped-card SwiftUI sheet on iPhone (and an anchored popover on regular-width iPad) with live matching title count, a single-row horizontal Sort bar, tri-state Filter pills (include / exclude / clear), direct Content Rating pills, and expandable Sources & Categories cards.
+- **Active Filter Chips & Visual Polish:** Adds a non-overlapping active filter chips strip with horizontal scroll edge fade stacked below the category bar, a one-tap `Clear Filters` empty-state button, contrast-aware selected foregrounds, a strengthened multi-stop cover title scrim for bright cover artwork, safe-area-centered empty/locked state views, and iOS 26 floating tab bar bottom clearance.
+
+### Minimal, Isolated Fork Architecture
+
+- Keeps upstream file edits to thin delegation hooks while placing fork code in dedicated folders (`Aidoku/Core/Sync/`, `Aidoku/Features/Settings/Sync/`, `Aidoku/Core/Metadata/`, `Aidoku/Features/Manga/Metadata/`, `Aidoku/Features/Library/Fork/`, `Aidoku/Core/Tracking/Fork/`, `Aidoku/Features/Settings/Tracking/`), separate `ForkLocalizable.strings` (`en` / `zh-Hant`), dedicated `ForkSync.` / `Fork.` `UserDefaults` prefixes, isolated fork CI workflows (`fork-release.yml`, `fork-lint.yml`), and zero edits to `Aidoku.xcdatamodeld`.
+
+### Installing Dokuha
+
+1. **SideStore (recommended) or AltStore:** Open **Sources**, tap **+**, and add:
+   ```
+   https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json
+   ```
+   Install **Dokuha** or update in place whenever new builds are published.
+2. **Manual IPA:** Download the latest unsigned `.ipa` from [GitHub Releases](https://github.com/sfai05/Aidoku/releases) and sideload it with SideStore or AltStore.
+3. **Build from Source (Free Apple ID):** Copy [`Local.xcconfig.example`](Local.xcconfig.example) to `Local.xcconfig`, set `DEVELOPMENT_TEAM` to your Personal Team ID (plus optional `APP_DISPLAY_NAME`, `APP_ID_PREFIX`, and `APP_ID_SUFFIX` overrides), and build the `Aidoku` scheme in Xcode without modifying `project.pbxproj`.
+4. **Set Up Cross-Device Sync:** Open **Settings → PocketBase Sync**, enter your PocketBase server URL, create the collection with the **One-Time Setup Wizard** (or import [`docs/sync/pb_schema.json`](docs/sync/pb_schema.json) in PocketBase Admin UI `/_/`), and sign in with a regular PocketBase **`users`** account on each device.
+
+> **Sync scope:** Sync transfers your library, custom manga metadata edits, reading history, chapters, categories, tracking links, reading sessions, updates, vocabulary, custom source configs, and source list URLs. Safe app settings sync is **off by default** (and sensitive keys matching `login`, `password`, `token`, `auth`, or `cookie` are always stripped). External `.aix` sources and offline chapter downloads are installed per device.
+
+---
+
+## What is Aidoku?
+
+[Aidoku](https://github.com/Aidoku/Aidoku) is a free and open-source manga reading application for iOS, iPadOS, and macOS created by [Skittyblock](https://github.com/Skittyblock) and contributors. Dokuha is built directly on top of Aidoku's core reader, database, and source ecosystem.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/library-noframe.png" width="25%" alt="Upstream Aidoku Library">
+  <img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/source-noframe.png" width="25%" alt="Upstream Aidoku Source">
+  <img src="https://raw.githubusercontent.com/Aidoku/Website/refs/heads/main/static/images/reader-noframe.png" width="25%" alt="Upstream Aidoku Reader">
 </p>
 
-## Features
+### Core Aidoku Features
 
 - No ads
-- Local file reading (CBZ)
+- Local file reading (CBZ / CBR)
 - Built-in reading service providers (Komga, Kavita, Suwayomi)
 - WASM external source system
-- Downloads
-- Tracker integration (AniList, MyAnimeList, etc.)
+- Offline chapter downloads
+- Tracker integration (AniList, MyAnimeList, MangaBaka, Bangumi, Shikimori, etc.)
 - OCR dictionary lookup
 
-## Installation
+### Upstream Links & Licensing
 
-For detailed installation instructions, check out [the website](https://aidoku.app).
-
-### TestFlight
-
-To join the TestFlight, you will need to join the [Aidoku Discord](https://discord.gg/kh2PYT8V8d).
-
-### AltStore
-
-We have an AltStore repo that contains the latest releases ipa. You can copy the [direct source URL](https://raw.githubusercontent.com/Aidoku/Aidoku/altstore/apps.json) and paste it into AltStore. Note that AltStore PAL is not supported.
-
-### Manual Installation
-
-The latest ipa file will always be available from the [releases page](https://github.com/Aidoku/Aidoku/releases). Nightly ipas are also built on each commit, but it's not recommended to use these since they may have in-progress changes that could cause issues when updating later.
-
-## Contributing
-
-Aidoku is still in a beta phase, and there are a lot of planned features and fixes. If you're interested in contributing, I'd first recommend checking with me on [Discord](https://discord.gg/kh2PYT8V8d) in the app development channel.
-
-This repo (excluding translations) is licensed under [GPLv3](https://github.com/Aidoku/Aidoku/blob/main/LICENSE), but contributors must also sign the project [CLA](https://gist.github.com/Skittyblock/893952ff23f0df0e5cd02abbaddc2be9). Essentially, this just gives me (Skittyblock) the ability to distribute Aidoku via TestFlight/the App Store, but others must obtain an exception from me in order to do the same. Otherwise, GPLv3 applies and this code can be used freely as long as the modified source code is made available.
-
-### Translations
-
-Interested in translating Aidoku? We use [Weblate](https://hosted.weblate.org/engage/aidoku/) to crowdsource translations, so anyone can create an account and contribute!
-
-Translations are licensed separately from the app code, under [Apache 2.0](https://spdx.org/licenses/Apache-2.0.html).
+- **Website & Docs:** [aidoku.app](https://aidoku.app)
+- **Community & TestFlight:** [Aidoku Discord](https://discord.gg/kh2PYT8V8d)
+- **Upstream Releases:** [Aidoku/Aidoku Releases](https://github.com/Aidoku/Aidoku/releases)
+- **Translations:** Crowdsourced on [Weblate](https://hosted.weblate.org/engage/aidoku/) and licensed separately under [Apache 2.0](https://spdx.org/licenses/Apache-2.0.html)
+- **License:** Application source code (excluding translations) is licensed under [GPLv3](LICENSE). Upstream Aidoku also uses a project [CLA](https://gist.github.com/Skittyblock/893952ff23f0df0e5cd02abbaddc2be9) governing official TestFlight / App Store distribution; under GPLv3, modified source code must remain available.
