@@ -120,8 +120,48 @@ extension LibraryViewController {
         return [.medium(), .large()]
     }
 
+    private func configureFilterSortSheetPresentation(_ sheet: UISheetPresentationController) {
+        sheet.detents = Self.makeFilterSortSheetDetents()
+        sheet.prefersGrabberVisible = true
+        sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+    }
+
+    func configureFilterSortPresentation(
+        for controller: UIViewController,
+        horizontalSizeClass: UIUserInterfaceSizeClass,
+        userInterfaceIdiom: UIUserInterfaceIdiom
+    ) {
+        let usePopover = LibraryFilterSortHelpers.shouldPresentAsPopover(
+            isPad: userInterfaceIdiom == .pad,
+            isRegularWidth: horizontalSizeClass == .regular
+        )
+        let canAnchorToBarButton = navigationController != nil
+            && navigationItem.rightBarButtonItems?.contains(filterSortBarButton) == true
+
+        if usePopover && canAnchorToBarButton {
+            controller.modalPresentationStyle = .popover
+            if let popover = controller.popoverPresentationController {
+                controller.preferredContentSize = LibraryFilterSortHelpers.preferredPopoverContentSize
+                if #available(iOS 16.0, *) {
+                    popover.sourceItem = filterSortBarButton
+                } else {
+                    popover.barButtonItem = filterSortBarButton
+                }
+                popover.permittedArrowDirections = .any
+                popover.passthroughViews = []
+                configureFilterSortSheetPresentation(popover.adaptiveSheetPresentationController)
+                return
+            }
+        }
+
+        controller.modalPresentationStyle = .pageSheet
+        if let sheet = controller.sheetPresentationController {
+            configureFilterSortSheetPresentation(sheet)
+        }
+    }
+
     @objc func openFilterSortSheet() {
-        guard !locked else { return }
+        guard !locked, presentedViewController == nil else { return }
         let state = LibraryFilterSortState(
             viewModel: viewModel,
             isUpdatingResults: forkFilterSortCoordinator.isLoadingResults
@@ -146,11 +186,11 @@ extension LibraryViewController {
 
         let controller = UIHostingController(rootView: sheetView)
         controller.view.backgroundColor = .systemGroupedBackground
-        if let sheet = controller.sheetPresentationController {
-            sheet.detents = Self.makeFilterSortSheetDetents()
-            sheet.prefersGrabberVisible = true
-            sheet.prefersScrollingExpandsWhenScrolledToEdge = true
-        }
+        configureFilterSortPresentation(
+            for: controller,
+            horizontalSizeClass: traitCollection.horizontalSizeClass,
+            userInterfaceIdiom: traitCollection.userInterfaceIdiom
+        )
         present(controller, animated: true)
     }
 

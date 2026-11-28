@@ -577,6 +577,11 @@ extension LibraryFilterSortTests {
         #expect(vc.forkFilterSortCoordinator.activeSheetState?.resultCount == 2)
         #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == false)
 
+        let initialState = vc.forkFilterSortCoordinator.activeSheetState
+        vc.openFilterSortSheet()
+        #expect(vc.forkFilterSortCoordinator.activeSheetState === initialState)
+        #expect(vc.presentedViewController === hostingController)
+
         let toggledSortMethod: LibraryViewModel.SortMethod = vc.viewModel.sortMethod == .alphabetical
             ? .lastUpdated
             : .alphabetical
@@ -637,5 +642,95 @@ extension LibraryFilterSortTests {
         header.layoutIfNeeded()
         #expect(!header.isEdgeFadeMaskActive)
         #expect(header.edgeFadeState == .none)
+    }
+
+    @Test func popoverPresentationPolicyAndPreferredSize() {
+        #expect(LibraryFilterSortHelpers.shouldPresentAsPopover(isPad: true, isRegularWidth: true))
+        #expect(!LibraryFilterSortHelpers.shouldPresentAsPopover(isPad: true, isRegularWidth: false))
+        #expect(!LibraryFilterSortHelpers.shouldPresentAsPopover(isPad: false, isRegularWidth: true))
+        #expect(!LibraryFilterSortHelpers.shouldPresentAsPopover(isPad: false, isRegularWidth: false))
+        #expect(LibraryFilterSortHelpers.preferredPopoverContentSize == CGSize(width: 400, height: 540))
+    }
+
+    @MainActor
+    @Test func filterSortPresentationConfiguresPopoverOnRegularPadAndSheetElsewhere() {
+        let snapshot = snapshotUserDefaults()
+        defer { restoreUserDefaults(snapshot) }
+
+        AppSettings.library.lockLibrary.set(false)
+        AppSettings.library.lockedCategories.set([])
+
+        let vc = LibraryViewController()
+        let nav = UINavigationController(rootViewController: vc)
+        _ = nav.view
+        vc.loadViewIfNeeded()
+        vc.updateNavbarItems()
+        #expect(vc.navigationItem.rightBarButtonItems?.contains(vc.filterSortBarButton) == true)
+
+        let popoverTarget = UIViewController()
+        vc.configureFilterSortPresentation(
+            for: popoverTarget,
+            horizontalSizeClass: .regular,
+            userInterfaceIdiom: .pad
+        )
+        #expect(popoverTarget.modalPresentationStyle == .popover)
+        #expect(popoverTarget.preferredContentSize == LibraryFilterSortHelpers.preferredPopoverContentSize)
+        #expect(popoverTarget.popoverPresentationController != nil)
+        if #available(iOS 16.0, *) {
+            #expect(popoverTarget.popoverPresentationController?.sourceItem as AnyObject? === vc.filterSortBarButton)
+            #expect(
+                popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.detents.first?.identifier
+                    == UISheetPresentationController.Detent.Identifier("libraryFilterSortPreferred")
+            )
+        }
+        #expect(popoverTarget.popoverPresentationController?.permittedArrowDirections == .any)
+        #expect(popoverTarget.popoverPresentationController?.passthroughViews?.isEmpty == true)
+        #expect(popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.detents.count == 2)
+        #expect(popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController.prefersGrabberVisible == true)
+        #expect(
+            popoverTarget.popoverPresentationController?.adaptiveSheetPresentationController
+                .prefersScrollingExpandsWhenScrolledToEdge == true
+        )
+
+        let compactPadTarget = UIViewController()
+        vc.configureFilterSortPresentation(
+            for: compactPadTarget,
+            horizontalSizeClass: .compact,
+            userInterfaceIdiom: .pad
+        )
+        #expect(compactPadTarget.modalPresentationStyle == .pageSheet)
+        #expect(compactPadTarget.sheetPresentationController?.detents.count == 2)
+        #expect(compactPadTarget.sheetPresentationController?.prefersGrabberVisible == true)
+
+        let regularPhoneTarget = UIViewController()
+        vc.configureFilterSortPresentation(
+            for: regularPhoneTarget,
+            horizontalSizeClass: .regular,
+            userInterfaceIdiom: .phone
+        )
+        #expect(regularPhoneTarget.modalPresentationStyle == .pageSheet)
+        #expect(regularPhoneTarget.sheetPresentationController?.detents.count == 2)
+
+        let originalItems = vc.navigationItem.rightBarButtonItems
+        vc.navigationItem.rightBarButtonItems = []
+        let missingAnchorTarget = UIViewController()
+        vc.configureFilterSortPresentation(
+            for: missingAnchorTarget,
+            horizontalSizeClass: .regular,
+            userInterfaceIdiom: .pad
+        )
+        #expect(missingAnchorTarget.modalPresentationStyle == .pageSheet)
+        vc.navigationItem.rightBarButtonItems = originalItems
+
+        let detachedVC = LibraryViewController()
+        detachedVC.loadViewIfNeeded()
+        detachedVC.updateNavbarItems()
+        let detachedTarget = UIViewController()
+        detachedVC.configureFilterSortPresentation(
+            for: detachedTarget,
+            horizontalSizeClass: .regular,
+            userInterfaceIdiom: .pad
+        )
+        #expect(detachedTarget.modalPresentationStyle == .pageSheet)
     }
 }
