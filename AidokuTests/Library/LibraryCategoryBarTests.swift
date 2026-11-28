@@ -423,3 +423,139 @@ import UIKit
         #expect(abs((bothHeader.bounds.height - bothFiltersFrame.maxY) - LibraryTopHeaderView.bottomPadding) < 0.01)
     }
 }
+
+extension LibraryCategoryBarTests {
+    @Test func horizontalEdgeFadeCalculatorHandlesAllScrollPositionsAndBounds() {
+        #expect(HorizontalEdgeFadeCalculator.state(contentOffsetX: 0, contentWidth: 500, viewportWidth: 0) == .none)
+        #expect(HorizontalEdgeFadeCalculator.state(contentOffsetX: 0, contentWidth: 500, viewportWidth: -100) == .none)
+        #expect(HorizontalEdgeFadeCalculator.state(contentOffsetX: 0, contentWidth: 500, viewportWidth: 390, fadeWidth: 0) == .none)
+        #expect(HorizontalEdgeFadeCalculator.state(contentOffsetX: 0, contentWidth: 390, viewportWidth: 390) == .none)
+        #expect(HorizontalEdgeFadeCalculator.state(contentOffsetX: 0, contentWidth: 390.4, viewportWidth: 390) == .none)
+
+        let startState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 0,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(startState.isActive)
+        #expect(abs(startState.leftStrength) < 0.01)
+        #expect(abs(startState.rightStrength - 1) < 0.01)
+        #expect(abs(startState.fadeFraction - (20 / 390)) < 0.001)
+
+        let leftBounceState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: -15,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(leftBounceState == startState)
+
+        let partialScrollState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 10,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(abs(partialScrollState.leftStrength - 0.5) < 0.01)
+        #expect(abs(partialScrollState.rightStrength - 1) < 0.01)
+
+        let midState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 100,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(abs(midState.leftStrength - 1) < 0.01)
+        #expect(abs(midState.rightStrength - 1) < 0.01)
+
+        let nearEndState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 400,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(abs(nearEndState.leftStrength - 1) < 0.01)
+        #expect(abs(nearEndState.rightStrength - 0.5) < 0.01)
+
+        let endState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 410,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(endState.isActive)
+        #expect(abs(endState.leftStrength - 1) < 0.01)
+        #expect(abs(endState.rightStrength) < 0.01)
+
+        let rightBounceState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 430,
+            contentWidth: 800,
+            viewportWidth: 390,
+            fadeWidth: 20
+        )
+        #expect(rightBounceState == endState)
+
+        let narrowViewportState = HorizontalEdgeFadeCalculator.state(
+            contentOffsetX: 25,
+            contentWidth: 200,
+            viewportWidth: 50,
+            fadeWidth: 20
+        )
+        #expect(abs(narrowViewportState.fadeFraction - 0.25) < 0.001)
+    }
+
+    @MainActor
+    @Test func categoryBarEdgeFadeMaskUpdatesAcrossNonOverflowAndScrollPositions() {
+        let header = LibraryCategoryBarHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 44))
+
+        let fitSnapshot = LibraryCategoryBarBuilder.build(
+            LibraryCategoryBarInput(
+                showUncategorized: false,
+                categories: ["Action", "Comedy"],
+                filterGroupTitles: [],
+                currentCategory: nil,
+                lockLibraryEnabled: false,
+                lockedCategories: []
+            )
+        )
+        header.configure(with: fitSnapshot)
+        header.layoutIfNeeded()
+        #expect(!header.isEdgeFadeMaskActive)
+        #expect(header.edgeFadeState == .none)
+
+        let overflowSnapshot = LibraryCategoryBarBuilder.build(
+            LibraryCategoryBarInput(
+                showUncategorized: false,
+                categories: (1...10).map { "Category \($0) Collection" },
+                filterGroupTitles: [],
+                currentCategory: nil,
+                lockLibraryEnabled: false,
+                lockedCategories: []
+            )
+        )
+        header.configure(with: overflowSnapshot)
+        header.layoutIfNeeded()
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength - 1) < 0.01)
+
+        let maxOffsetX = header.scrollView.contentSize.width - header.scrollView.bounds.width
+        #expect(maxOffsetX > 40)
+
+        header.scrollView.setContentOffset(CGPoint(x: maxOffsetX / 2, y: 0), animated: false)
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength - 1) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength - 1) < 0.01)
+
+        header.scrollView.setContentOffset(CGPoint(x: maxOffsetX, y: 0), animated: false)
+        #expect(header.isEdgeFadeMaskActive)
+        #expect(abs(header.edgeFadeState.leftStrength - 1) < 0.01)
+        #expect(abs(header.edgeFadeState.rightStrength) < 0.01)
+
+        header.configure(with: fitSnapshot)
+        header.layoutIfNeeded()
+        #expect(!header.isEdgeFadeMaskActive)
+        #expect(header.edgeFadeState == .none)
+    }
+}

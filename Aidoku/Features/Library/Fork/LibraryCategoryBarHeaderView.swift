@@ -11,8 +11,10 @@ import UIKit
 final class LibraryCategoryBarHeaderView: UICollectionReusableView {
     weak var delegate: LibraryCategorySelectionHeaderDelegate?
 
-    private let scrollView = UIScrollView()
+    private let scrollContainerView = UIView()
+    let scrollView = UIScrollView()
     private let pillStackView = UIStackView()
+    private let edgeFadeController = HorizontalEdgeFadeMaskController()
 
     private var snapshot: LibraryCategoryBarSnapshot?
     private var orderedPillButtons: [UIButton] = []
@@ -23,6 +25,8 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
     var currentSnapshot: LibraryCategoryBarSnapshot? { snapshot }
     var pillButtons: [UIButton] { orderedPillButtons }
     var currentScrollOffsetX: CGFloat { scrollView.contentOffset.x }
+    var edgeFadeState: HorizontalEdgeFadeState { edgeFadeController.currentState }
+    var isEdgeFadeMaskActive: Bool { scrollContainerView.layer.mask != nil }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -66,10 +70,11 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        scrollView.layoutIfNeeded()
         if pendingScrollToSelected && scrollView.bounds.width > 0 {
-            scrollView.layoutIfNeeded()
             scrollSelectedPillIntoView(animated: pendingScrollAnimated)
         }
+        edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
     }
 
     override func tintColorDidChange() {
@@ -81,10 +86,13 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
 
 private extension LibraryCategoryBarHeaderView {
     func configureViews() {
+        addSubview(scrollContainerView)
+
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
         scrollView.contentInsetAdjustmentBehavior = .never
-        addSubview(scrollView)
+        scrollView.delegate = self
+        scrollContainerView.addSubview(scrollView)
 
         pillStackView.axis = .horizontal
         pillStackView.alignment = .center
@@ -95,14 +103,20 @@ private extension LibraryCategoryBarHeaderView {
     }
 
     func constrainViews() {
+        scrollContainerView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         pillStackView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollContainerView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
+            scrollContainerView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+            scrollContainerView.topAnchor.constraint(equalTo: topAnchor),
+            scrollContainerView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            scrollView.leadingAnchor.constraint(equalTo: scrollContainerView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: scrollContainerView.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: scrollContainerView.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: scrollContainerView.bottomAnchor),
 
             pillStackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             pillStackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
@@ -134,6 +148,7 @@ private extension LibraryCategoryBarHeaderView {
                 }
             }
         }
+        setNeedsLayout()
     }
 
     func makeSectionDivider() -> UIView {
@@ -216,6 +231,7 @@ private extension LibraryCategoryBarHeaderView {
         if scrollView.bounds.width > 0 {
             layoutIfNeeded()
             scrollSelectedPillIntoView(animated: false)
+            edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
         }
     }
 
@@ -227,5 +243,11 @@ private extension LibraryCategoryBarHeaderView {
         let maxOffsetX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
         let targetX = min(max(0, pillFrame.midX - scrollView.bounds.width / 2), maxOffsetX)
         scrollView.setContentOffset(CGPoint(x: targetX, y: 0), animated: animated)
+    }
+}
+
+extension LibraryCategoryBarHeaderView: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        edgeFadeController.update(containerView: scrollContainerView, scrollView: scrollView)
     }
 }

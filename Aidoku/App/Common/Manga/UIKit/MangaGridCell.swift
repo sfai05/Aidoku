@@ -88,11 +88,13 @@ class MangaGridCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         contentView.addSubview(imageView)
 
+        // Fork: Stronger multi-stop scrim and subtle text shadow for legibility on bright covers
         gradient.frame = bounds
-        gradient.locations = [0.6, 1]
+        gradient.locations = [0.48, 0.76, 1]
         gradient.colors = [
             UIColor(white: 0, alpha: 0).cgColor,
-            UIColor(white: 0, alpha: 0.7).cgColor
+            UIColor(white: 0, alpha: 0.45).cgColor,
+            UIColor(white: 0, alpha: 0.86).cgColor
         ]
         gradient.cornerRadius = layer.cornerRadius
         gradient.needsDisplayOnBoundsChange = true
@@ -104,6 +106,11 @@ class MangaGridCell: UICollectionViewCell {
         titleLabel.textColor = .white
         titleLabel.numberOfLines = 2
         titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        // Fork: Subtle drop shadow improves title contrast over bright cover artwork
+        titleLabel.layer.shadowColor = UIColor.black.cgColor
+        titleLabel.layer.shadowOpacity = 0.5
+        titleLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
+        titleLabel.layer.shadowRadius = 2
         contentView.addSubview(titleLabel)
 
         contentView.addSubview(badgeView)
