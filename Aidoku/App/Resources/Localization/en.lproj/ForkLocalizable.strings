@@ -263,3 +263,16 @@
 "MANGABAKA_AUTH_PAT_REPLACE_PLACEHOLDER" = "Enter new API key to replace (mb-...)";
 "MANGABAKA_AUTH_PAT_REMOVE" = "Remove Saved API Key";
 "MANGABAKA_AUTH_PAT_REMOVED" = "Saved API key removed. Your tracking links were kept.";
+
+/* Library Filter & Sort Sheet */
+"LIBRARY_FILTER_SORT_TITLE" = "Filter & Sort";
+"LIBRARY_SORT_TAB" = "Sort";
+"LIBRARY_FILTER_TAB_COUNT_FORMAT" = "Filter (%d)";
+"LIBRARY_FILTER_TRISTATE_HINT" = "Tap once to include, twice to exclude, and a third time to clear.";
+"LIBRARY_FILTER_GROUP_ACTIVE_NOTE_FORMAT" = "Extra filters here apply on top of the \"%@\" filter group.";
+"LIBRARY_SORT_TAP_HINT" = "Tap the active sort option again to reverse order.";
+"LIBRARY_FILTER_STATE_OFF" = "Off";
+"LIBRARY_FILTER_STATE_INCLUDED" = "Included";
+"LIBRARY_FILTER_STATE_EXCLUDED" = "Excluded";
+"LIBRARY_ACTIVE_FILTERS_COUNT_FORMAT" = "%d active";
+"LIBRARY_REMOVE_FILTER_CHIP_A11Y_FORMAT" = "Remove %@ filter";
