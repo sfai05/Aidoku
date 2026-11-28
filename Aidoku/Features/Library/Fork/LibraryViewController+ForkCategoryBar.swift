@@ -2,7 +2,7 @@
 //  LibraryViewController+ForkCategoryBar.swift
 //  Aidoku
 //
-//  Created by Dokuha on 11/28/26.
+//  Created by Kodoku on 11/28/26.
 //
 
 import UIKit
@@ -22,23 +22,39 @@ extension LibraryViewController {
         )
     }
 
-    func makeCategoryBarRegistration() -> UICollectionView.SupplementaryRegistration<LibraryCategoryBarHeaderView> {
-        UICollectionView.SupplementaryRegistration<LibraryCategoryBarHeaderView>(
+    func makeTopHeaderRegistration() -> UICollectionView.SupplementaryRegistration<LibraryTopHeaderView> {
+        UICollectionView.SupplementaryRegistration<LibraryTopHeaderView>(
             elementKind: UICollectionView.elementKindSectionHeader
         ) { [weak self] header, _, _ in
             guard let self else { return }
-            header.delegate = self
-            header.configure(with: self.buildCategoryBarSnapshot(), animatedScroll: false)
+            let showCategories = !self.viewModel.categories.isEmpty || !self.viewModel.filterGroups.isEmpty
+            let showActiveFilters = !self.viewModel.filters.isEmpty && !self.locked
+            header.configureVisibility(showCategories: showCategories, showActiveFilters: showActiveFilters)
+            header.categoryBarView.delegate = self
+            if showCategories {
+                header.categoryBarView.configure(with: self.buildCategoryBarSnapshot(), animatedScroll: false)
+            }
+            if showActiveFilters {
+                self.configureActiveFiltersHeader(header.activeFiltersView)
+            }
         }
     }
 
     func refreshCategoryBarHeader(animatedScroll: Bool = false) {
-        let snapshot = buildCategoryBarSnapshot()
-        for case let header as LibraryCategoryBarHeaderView in collectionView.visibleSupplementaryViews(
+        let showCategories = !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty
+        let showActiveFilters = !viewModel.filters.isEmpty && !locked
+        let snapshot = showCategories ? buildCategoryBarSnapshot() : nil
+        for case let header as LibraryTopHeaderView in collectionView.visibleSupplementaryViews(
             ofKind: UICollectionView.elementKindSectionHeader
         ) {
-            header.delegate = self
-            header.configure(with: snapshot, animatedScroll: animatedScroll)
+            header.configureVisibility(showCategories: showCategories, showActiveFilters: showActiveFilters)
+            header.categoryBarView.delegate = self
+            if let snapshot {
+                header.categoryBarView.configure(with: snapshot, animatedScroll: animatedScroll)
+            }
+            if showActiveFilters {
+                configureActiveFiltersHeader(header.activeFiltersView)
+            }
         }
     }
 }

@@ -43,10 +43,6 @@ struct LibraryCategoryBarSnapshot: Equatable, Sendable {
     var totalItemCount: Int {
         sections.reduce(0) { $0 + $1.items.count }
     }
-
-    var shouldShowQuickJumpButton: Bool {
-        totalItemCount >= 5
-    }
 }
 
 /// Input parameters for constructing a `LibraryCategoryBarSnapshot`.

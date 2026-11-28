@@ -220,6 +220,7 @@ import UIKit
         }
 
         vc.loadViewIfNeeded()
+        #expect(vc.navigationItem.searchController == nil)
         vc.viewModel.categories = ["Action"]
         vc.viewModel.filters = []
         vc.syncFilterSortUIState()
@@ -233,15 +234,28 @@ import UIKit
         vc.view.layoutIfNeeded()
 
         let layoutConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
-        #expect(layoutConfig?.boundarySupplementaryItems.contains {
-            $0.elementKind == LibraryActiveFiltersHeaderView.elementKind
-        } ?? false)
+        #expect(layoutConfig?.boundarySupplementaryItems.count == 1)
+        let topBoundary = layoutConfig?.boundarySupplementaryItems.first
+        #expect(topBoundary?.elementKind == UICollectionView.elementKindSectionHeader)
+        #expect(topBoundary?.layoutSize.heightDimension.dimension == 82)
 
         let initialHeader = vc.collectionView
-            .visibleSupplementaryViews(ofKind: LibraryActiveFiltersHeaderView.elementKind)
-            .first as? LibraryActiveFiltersHeaderView
+            .visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader)
+            .first as? LibraryTopHeaderView
         #expect(initialHeader != nil)
-        #expect(initialHeader?.displayedChips.count == 1)
+        if let initialHeader {
+            let categoryFrame = initialHeader.convert(
+                initialHeader.categoryBarView.bounds,
+                from: initialHeader.categoryBarView
+            )
+            let filtersFrame = initialHeader.convert(
+                initialHeader.activeFiltersView.bounds,
+                from: initialHeader.activeFiltersView
+            )
+            #expect(filtersFrame.minY >= categoryFrame.maxY)
+            #expect(!categoryFrame.intersects(filtersFrame))
+        }
+        #expect(initialHeader?.activeFiltersView.displayedChips.count == 1)
 
         let genAfterFirst = vc.forkFilterSortCoordinator.reloadGeneration
         #expect(vc.forkFilterSortCoordinator.activeReloadTask != nil)
@@ -258,19 +272,22 @@ import UIKit
         #expect(vc.forkFilterSortCoordinator.pendingSortOnly)
 
         let updatedHeader = vc.collectionView
-            .visibleSupplementaryViews(ofKind: LibraryActiveFiltersHeaderView.elementKind)
-            .first as? LibraryActiveFiltersHeaderView
-        #expect(updatedHeader?.displayedChips.count == 2)
-        #expect(updatedHeader?.arrangedChipViews.count == 3)
+            .visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader)
+            .first as? LibraryTopHeaderView
+        #expect(updatedHeader?.activeFiltersView.displayedChips.count == 2)
+        #expect(updatedHeader?.activeFiltersView.arrangedChipViews.count == 3)
 
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
         #expect(vc.forkFilterSortCoordinator.activeReloadTask == nil)
         #expect(!vc.forkFilterSortCoordinator.pendingLibraryLoad)
         #expect(!vc.forkFilterSortCoordinator.pendingSortOnly)
 
+        vc.viewModel.categories = ["Action"]
         vc.clearAllFilters()
         #expect(vc.viewModel.filters.isEmpty)
         #expect(!vc.forkFilterSortCoordinator.isShowingActiveFiltersHeader)
+        let clearedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(clearedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 44)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
     }
 

@@ -55,6 +55,7 @@ private extension LibraryActiveFiltersHeaderView {
     func configureViews() {
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
+        scrollView.contentInsetAdjustmentBehavior = .never
         addSubview(scrollView)
 
         stackView.axis = .horizontal
@@ -102,8 +103,10 @@ private extension LibraryActiveFiltersHeaderView {
         let accent: UIColor = chip.isExcluded ? .systemRed : tintColor
         var config = UIButton.Configuration.filled()
         config.cornerStyle = .capsule
-        config.baseBackgroundColor = accent.withAlphaComponent(0.14)
+        config.baseBackgroundColor = accent.withAlphaComponent(0.18)
         config.baseForegroundColor = accent
+        config.background.strokeColor = accent.withAlphaComponent(0.35)
+        config.background.strokeWidth = 1
         config.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10)
         config.imagePadding = 5
         config.imagePlacement = .trailing
