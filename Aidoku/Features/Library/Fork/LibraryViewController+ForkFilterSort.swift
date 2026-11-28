@@ -68,7 +68,7 @@ extension LibraryViewController {
             : nil
     }
 
-    func refreshActiveFiltersHeader() {
+    func refreshActiveFiltersHeader(animatedCategoryScroll: Bool = false) {
         let showCategories = shouldShowCategoryBar
         let shouldShow = shouldShowActiveFiltersBar
         let expectedHeight = LibraryTopHeaderView.totalHeight(
@@ -85,7 +85,10 @@ extension LibraryViewController {
             header.configureVisibility(showCategories: showCategories, showActiveFilters: shouldShow)
             if showCategories {
                 header.categoryBarView.delegate = self
-                header.categoryBarView.configure(with: buildCategoryBarSnapshot(), animatedScroll: false)
+                header.categoryBarView.configure(
+                    with: buildCategoryBarSnapshot(),
+                    animatedScroll: animatedCategoryScroll
+                )
             }
             if shouldShow {
                 configureActiveFiltersHeader(header.activeFiltersView)
@@ -93,10 +96,10 @@ extension LibraryViewController {
         }
     }
 
-    func syncFilterSortUIState() {
+    func syncFilterSortUIState(animatedCategoryScroll: Bool = false) {
         forkFilterSortCoordinator.activeSheetState?.update(from: viewModel)
         updateFilterSortBarButton()
-        refreshActiveFiltersHeader()
+        refreshActiveFiltersHeader(animatedCategoryScroll: animatedCategoryScroll)
     }
 
     @objc func openFilterSortSheet() {

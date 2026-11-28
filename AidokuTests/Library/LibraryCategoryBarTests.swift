@@ -370,6 +370,8 @@ import UIKit
         zeroHeader.setNeedsLayout()
         zeroHeader.layoutIfNeeded()
         #expect(!zeroHeader.bounds.width.isNaN && !zeroHeader.bounds.height.isNaN)
+        #expect(abs(zeroHeader.categoryBarView.bounds.height - 44) < 0.01)
+        #expect(abs(zeroHeader.activeFiltersView.bounds.height - 38) < 0.01)
 
         let categoriesOnlyHeader = LibraryTopHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 50))
         categoriesOnlyHeader.configureVisibility(showCategories: true, showActiveFilters: false)

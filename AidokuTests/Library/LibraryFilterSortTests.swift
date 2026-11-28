@@ -420,6 +420,17 @@ import UIKit
         #expect(vc.forkFilterSortCoordinator.lastTopHeaderHeight == 50)
         let healedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
         #expect(healedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 50)
+
+        vc.viewModel.categories = []
+        vc.viewModel.filterGroups = []
+        vc.syncFilterSortUIState()
+        #expect(vc.forkFilterSortCoordinator.lastTopHeaderHeight == 0)
+
+        vc.viewModel.filterGroups = [FilterGroup(title: "Ongoing", filters: [])]
+        vc.syncFilterSortUIState()
+        #expect(vc.forkFilterSortCoordinator.lastTopHeaderHeight == 50)
+        let filterGroupHealedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
+        #expect(filterGroupHealedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 50)
     }
 
     @MainActor

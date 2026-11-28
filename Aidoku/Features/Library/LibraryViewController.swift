@@ -844,7 +844,7 @@ extension LibraryViewController {
 
         updateNavbarLock()
         // Fork: Sync filter UI and header layout height before refreshing category header on lock change
-        syncFilterSortUIState()
+        syncFilterSortUIState(animatedCategoryScroll: true)
         updateHeaderLockIcons()
         updateDataSource()
     }
