@@ -208,15 +208,8 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func constrain() {
         super.constrain()
 
-        emptyStackView.translatesAutoresizingMaskIntoConstraints = false
-        lockedStackView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            emptyStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            emptyStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            lockedStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            lockedStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-        ])
+        // Fork: Center empty and locked states within safeAreaLayoutGuide with horizontal padding
+        constrainLibraryStateViews(emptyStackView: emptyStackView, lockedStackView: lockedStackView)
     }
 
     override func observe() {
