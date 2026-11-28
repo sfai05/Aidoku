@@ -116,6 +116,8 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     override func configure() {
         super.configure()
+        // Fork: Add extra bottom clearance for iOS 26 floating tab bar
+        configureLibraryBottomInset()
 
         title = NSLocalizedString("LIBRARY")
 
