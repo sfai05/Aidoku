@@ -558,4 +558,54 @@ extension LibraryCategoryBarTests {
         #expect(!header.isEdgeFadeMaskActive)
         #expect(header.edgeFadeState == .none)
     }
+
+    @MainActor
+    @Test func selectedCategoryPillUsesContrastAwareForegroundForLightAndDarkTintColors() {
+        let header = LibraryCategoryBarHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 44))
+        let snapshot = LibraryCategoryBarBuilder.build(
+            LibraryCategoryBarInput(
+                showUncategorized: false,
+                categories: ["Action"],
+                filterGroupTitles: [],
+                currentCategory: nil,
+                lockLibraryEnabled: false,
+                lockedCategories: []
+            )
+        )
+        header.configure(with: snapshot)
+        header.layoutIfNeeded()
+
+        header.tintColor = .systemIndigo
+        #expect(header.pillButtons.first?.configuration?.baseForegroundColor == .white)
+
+        header.tintColor = .systemYellow
+        #expect(header.pillButtons.first?.configuration?.baseForegroundColor == .black)
+
+        header.tintColor = .systemPink
+        #expect(header.pillButtons.first?.configuration?.baseForegroundColor == .white)
+
+        let host = UIViewController()
+        host.view.addSubview(header)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        header.tintColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .systemYellow : .systemIndigo
+        }
+
+        window.overrideUserInterfaceStyle = .light
+        window.layoutIfNeeded()
+        header.layoutIfNeeded()
+        #expect(header.pillButtons.first?.configuration?.baseForegroundColor == .white)
+
+        window.overrideUserInterfaceStyle = .dark
+        window.layoutIfNeeded()
+        header.layoutIfNeeded()
+        #expect(header.pillButtons.first?.configuration?.baseForegroundColor == .black)
+    }
 }

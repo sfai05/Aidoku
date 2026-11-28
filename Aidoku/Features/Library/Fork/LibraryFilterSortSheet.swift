@@ -15,6 +15,8 @@ struct LibraryFilterSortSheet: View {
     let onSelectSort: (LibraryViewModel.SortMethod) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     @State private var isSourcesExpanded: Bool
     @State private var isCategoriesExpanded: Bool
@@ -343,6 +345,22 @@ private extension LibraryFilterSortSheet {
         }
     }
 
+    var selectedAccentForeground: Color {
+        ForkContrastColor.swiftUIForegroundColor(
+            for: UIColor(Color.accentColor),
+            colorScheme: colorScheme,
+            highContrast: colorSchemeContrast == .increased
+        )
+    }
+
+    var excludedChipForeground: Color {
+        ForkContrastColor.swiftUIForegroundColor(
+            for: .systemRed,
+            colorScheme: colorScheme,
+            highContrast: colorSchemeContrast == .increased
+        )
+    }
+
     func sortChip(for method: LibraryViewModel.SortMethod, isUp: Bool) -> some View {
         let isSelected = state.sortMethod == method
         return Button {
@@ -359,7 +377,7 @@ private extension LibraryFilterSortSheet {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .foregroundStyle(isSelected ? selectedAccentForeground : Color.primary)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Color.accentColor : Color(uiColor: .secondarySystemFill))
@@ -387,7 +405,12 @@ private extension LibraryFilterSortSheet {
             case .included: .accentColor
             case .excluded: Color(uiColor: .systemRed)
         }
-        let foregroundColor: Color = triState == .off ? .primary : .white
+        let foregroundColor: Color = switch triState {
+            case .off: .primary
+            case .included: selectedAccentForeground
+            case .excluded: excludedChipForeground
+        }
+        let iconForegroundColor: Color = triState == .off ? .secondary : foregroundColor
         let leadingIcon: String? = switch triState {
             case .off: systemImage
             case .included: "checkmark"
@@ -399,7 +422,7 @@ private extension LibraryFilterSortSheet {
                 if let leadingIcon {
                     Image(systemName: leadingIcon)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(triState == .off ? Color.secondary : Color.white)
+                        .foregroundStyle(iconForegroundColor)
                 }
                 Text(title)
                     .font(.subheadline.weight(triState == .off ? .medium : .semibold))

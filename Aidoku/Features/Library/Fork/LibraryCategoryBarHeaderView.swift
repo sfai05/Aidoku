@@ -82,6 +82,16 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
         guard let snapshot else { return }
         rebuildPills(from: snapshot)
     }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard let snapshot else { return }
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
+            handleContentSizeCategoryDidChange()
+        } else if previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true {
+            rebuildPills(from: snapshot)
+        }
+    }
 }
 
 private extension LibraryCategoryBarHeaderView {
@@ -178,7 +188,10 @@ private extension LibraryCategoryBarHeaderView {
 
         if item.isSelected {
             config.baseBackgroundColor = tintColor
-            config.baseForegroundColor = .white
+            config.baseForegroundColor = ForkContrastColor.uiForegroundColor(
+                for: tintColor,
+                traitCollection: traitCollection
+            )
         } else if item.kind == .filterGroup {
             config.baseBackgroundColor = tintColor.withAlphaComponent(0.12)
             config.baseForegroundColor = tintColor
@@ -192,7 +205,8 @@ private extension LibraryCategoryBarHeaderView {
         var titleAttributes = AttributeContainer()
         titleAttributes.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
             for: .systemFont(ofSize: 13, weight: item.isSelected ? .semibold : .medium),
-            maximumPointSize: 17
+            maximumPointSize: 17,
+            compatibleWith: traitCollection
         )
         config.attributedTitle = AttributedString(item.title, attributes: titleAttributes)
 

@@ -733,4 +733,81 @@ extension LibraryFilterSortTests {
         )
         #expect(detachedTarget.modalPresentationStyle == .pageSheet)
     }
+
+    @MainActor
+    @Test func activeFiltersHeaderRebuildsChipsAndUpdatesFontsOnDynamicTypeChange() {
+        let container = UIViewController()
+        let host = UIViewController()
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+
+        let header = LibraryActiveFiltersHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 38))
+        host.view.addSubview(header)
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = container
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        let chips = LibraryFilterSortHelpers.activeFilterChips(
+            for: [
+                LibraryFilter(type: .downloaded, value: nil, exclude: false),
+                LibraryFilter(type: .tracking, value: nil, exclude: true)
+            ],
+            resolveSourceName: { $0 }
+        )
+        header.configure(chips: chips, onRemoveFilter: { _ in }, onClearAll: {})
+        window.layoutIfNeeded()
+        header.layoutIfNeeded()
+
+        let initialViews = header.arrangedChipViews
+        #expect(initialViews.count == 3)
+
+        NotificationCenter.default.post(name: UIContentSizeCategory.didChangeNotification, object: nil)
+        let rebuiltViews = header.arrangedChipViews
+        #expect(rebuiltViews.count == 3)
+        #expect(header.displayedChips == chips)
+        #expect(!zip(initialViews, rebuiltViews).contains { $0 === $1 })
+
+        func firstChipFontPointSize() -> CGFloat? {
+            guard let title = (header.arrangedChipViews.first as? UIButton)?.configuration?.attributedTitle else {
+                return nil
+            }
+            return (NSAttributedString(title).attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize
+        }
+
+        if #available(iOS 17.0, *) {
+            host.traitOverrides.preferredContentSizeCategory = .extraSmall
+        } else {
+            container.setOverrideTraitCollection(
+                UITraitCollection(preferredContentSizeCategory: .extraSmall),
+                forChild: host
+            )
+        }
+        window.layoutIfNeeded()
+        header.layoutIfNeeded()
+        let extraSmallSize = firstChipFontPointSize()
+
+        if #available(iOS 17.0, *) {
+            host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraLarge
+        } else {
+            container.setOverrideTraitCollection(
+                UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraLarge),
+                forChild: host
+            )
+        }
+        window.layoutIfNeeded()
+        header.layoutIfNeeded()
+        let enlargedSize = firstChipFontPointSize()
+
+        #expect(extraSmallSize != nil)
+        #expect(enlargedSize == 16)
+        if let extraSmallSize, let enlargedSize {
+            #expect(enlargedSize > extraSmallSize)
+        }
+    }
 }
