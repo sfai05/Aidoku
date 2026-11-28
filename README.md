@@ -8,7 +8,7 @@
 <h1 align="center">Dokuha</h1>
 
 <p align="center">
-  Personal fork of <a href="https://github.com/Aidoku/Aidoku">Aidoku</a> (<code>io.github.sfai05.Dokuha</code>) built for <strong>free Apple ID / SideStore sideloading</strong>, <strong>self-hostable PocketBase cross-device sync</strong>, <strong>richer metadata management</strong>, and <strong>one-tap library filtering &amp; navigation</strong>.
+  Personal fork of <a href="https://github.com/Aidoku/Aidoku">Aidoku</a> (<code>io.github.sfai05.Dokuha</code>) built for <strong>self-hostable PocketBase cross-device sync</strong>, <strong>richer metadata management</strong>, <strong>hardened MangaBaka tracking</strong>, and <strong>one-tap library filtering &amp; navigation</strong>.
 </p>
 
 <p align="center">
@@ -24,18 +24,11 @@
 
 ### TL;DR
 
-- **Free Apple ID & SideStore Ready:** Compiles and runs on a Personal Team with automated unsigned `.ipa` releases and a SideStore/AltStore `apps.json` feed.
 - **Self-Hostable PocketBase Sync:** Replaces CloudKit with an inspectable snapshot + smart-merge engine, Keychain-backed auth, 60s default debounce, and foreground/background flush.
 - **Sync Dashboard & Recovery Tools:** Adds a dedicated PocketBase Sync dashboard, One-Time Setup Wizard, `pb_schema.json` import, sync logs viewer, and rollback/force-sync tools.
 - **Metadata Editing & MangaBaka Pull:** Edit manga fields in-app with sync-preserved `EditedKeys`, or selectively pull multi-language titles/synopses, AniList native staff, and volume covers.
 - **Hardened MangaBaka Tracking:** Adds long-lived Personal Access Token (`mb-...`) auth alongside stabilized OAuth refresh, decimal progress/score decoding, and `POST` 404 fallback.
 - **Redesigned Library Controls:** Replaces the dropdown with a one-tap scrollable category pill bar, adds a Filter & Sort sheet/popover with tri-state filters and active filter chips, and strengthens cover title contrast.
-
-### Free Apple ID & SideStore / AltStore First
-
-- Removes paid Apple Developer entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity containers, `com.apple.developer.user-fonts`) and removes `remote-notification` from `UIBackgroundModes` in `Info.plist` so builds sign, install, and run cleanly under a free Apple ID (Personal Team).
-- Preserves local notifications (`UNUserNotificationCenter`) and background library refresh (`BGProcessingTask` and `fetch`) without requiring APNs.
-- Publishes unsigned `.ipa` builds and updates a SideStore / AltStore-compatible `apps.json` feed automatically through an isolated fork release workflow ([`.github/workflows/fork-release.yml`](.github/workflows/fork-release.yml)).
 
 ### Self-Hostable PocketBase Cross-Device Sync
 
