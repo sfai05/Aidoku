@@ -1,22 +1,22 @@
 {
-  "name": "Kodoku",
-  "identifier": "io.github.sfai05.kodoku.source",
+  "name": "Dokuha",
+  "identifier": "io.github.sfai05.dokuha.source",
   "sourceURL": "https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json",
-  "subtitle": "SideStore & AltStore source for Kodoku (free Apple ID fork of Aidoku)",
-  "description": "SideStore and AltStore source for Kodoku, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
+  "subtitle": "SideStore & AltStore source for Dokuha (free Apple ID fork of Aidoku)",
+  "description": "SideStore and AltStore source for Dokuha, an open-source fork of Aidoku tailored for free Apple ID sideloading and cross-device sync.\n\nSource code & releases: https://github.com/sfai05/Aidoku",
   "website": "https://github.com/sfai05/Aidoku",
   "iconURL": "https://raw.githubusercontent.com/sfai05/Aidoku/main/Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png",
   "tintColor": "1F6BFF",
   "featuredApps": [
-    "io.github.sfai05.Kodoku"
+    "io.github.sfai05.Dokuha"
   ],
   "apps": [
     {
-      "name": "Kodoku",
-      "bundleIdentifier": "io.github.sfai05.Kodoku",
+      "name": "Dokuha",
+      "bundleIdentifier": "io.github.sfai05.Dokuha",
       "developerName": "sfai05 (Fork of Aidoku by Skitty)",
       "subtitle": "Open-source manga reader for iOS and iPadOS (Aidoku fork)",
-      "localizedDescription": "Kodoku is an open-source fork of Aidoku built for free Apple ID sideloading via SideStore/AltStore, with planned self-hostable sync and manga management enhancements. Licensed under GPLv3.",
+      "localizedDescription": "Dokuha is an open-source fork of Aidoku built for free Apple ID sideloading via SideStore/AltStore, with self-hostable PocketBase cross-device sync and manga management enhancements. Licensed under GPLv3.",
       "iconURL": "https://raw.githubusercontent.com/sfai05/Aidoku/main/Aidoku/App/Resources/Assets.xcassets/AppIcon.appiconset/Icon.png",
       "tintColor": "1F6BFF",
       "category": "entertainment",
@@ -31,63 +31,13 @@
       "versions": [
         {
           "version": "0.9",
-          "buildVersion": "106",
-          "date": "2026-11-27T23:27:17Z",
-          "localizedDescription": "Fix MangaBaka tracking reliability (decimal progress, 404 recovery, POSIX dates, finish_date encoding) and add Personal Access Token (API Key) authentication.",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.106/Kodoku-v0.9-kodoku.106.ipa",
-          "size": 15339235,
+          "buildVersion": "107",
+          "date": "2026-11-28T01:05:17Z",
+          "localizedDescription": "Rebranded from Kodoku to Dokuha (\"io.github.sfai05.Dokuha\", default PocketBase collection \"dokuha_sync_snapshots\", keeping the existing app icon), plus new Library & Metadata features:\n\n• Rename app branding, bundle ID, SideStore/AltStore source metadata, and PocketBase default schema to Dokuha (#28)\n• Replace Library category dropdown with a one-tap horizontal capsule pill bar (#27)\n• Add Library Filter & Sort bottom sheet with tri-state filters and removable active filter chips (#25)\n• Allow editing per-manga Content Rating and mapping it from MangaBaka metadata pulls (#23)\n\nMigration Note: Because the bundle identifier changed from \"io.github.sfai05.Kodoku\" to \"io.github.sfai05.Dokuha\", install Dokuha as a fresh app in SideStore/AltStore (if SideStore warns about the updated source identifier, remove and re-add the \"apps.json\" source URL). On existing PocketBase servers, rename \"kodoku_sync_snapshots\" to \"dokuha_sync_snapshots\" (or recreate via Setup Wizard / \"docs/sync/pb_schema.json\"), or set the legacy collection name in Sync Settings.",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-dokuha.107/Dokuha-v0.9-dokuha.107.ipa",
+          "size": 15381784,
           "minOSVersion": "15.0",
-          "sha256": "4cbdd86481a8129fc625c77b7e8f826a30a49ef2c4b5dc4848b2fcd740f19cbd"
-        },
-        {
-          "version": "0.9",
-          "buildVersion": "105",
-          "date": "2026-11-27T21:24:20Z",
-          "localizedDescription": "Added automatic Traditional Chinese (zh-Hant) description conversion from Bangumi Simplified Chinese synopses, while keeping native MangaDex Traditional Chinese ranked ahead when available.",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.105/Kodoku-v0.9-kodoku.105.ipa",
-          "size": 15290076,
-          "minOSVersion": "15.0",
-          "sha256": "0a9a3fa5fc313af5ab3a82239b35e12e54b4f14c3c2259e06bb89f798ecacae8"
-        },
-        {
-          "version": "0.9",
-          "buildVersion": "104",
-          "date": "2026-11-27T20:52:50Z",
-          "localizedDescription": "Enriched MangaBaka metadata pull: original-language author & artist names via AniList, localized descriptions via MangaDex & Bangumi following local language priority, and an interactive all-covers gallery picker from MangaBaka /images.",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.104/Kodoku-v0.9-kodoku.104.ipa",
-          "size": 15289591,
-          "minOSVersion": "15.0",
-          "sha256": "397b6fb2396024f73ac7736c8349d7a6ea680c0d9a59bc0b37d230a1c1ddc947"
-        },
-        {
-          "version": "0.9",
-          "buildVersion": "103",
-          "date": "2026-11-27T18:36:12Z",
-          "localizedDescription": "Add manual manga metadata editing (cover, title, authors, artists, status, description, tags), MangaBaka tracker metadata pull with configurable local title language priority, PocketBase per-field metadata sync, and sync UX improvements with 60s default debounce and lock-screen flush.",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.103/Kodoku-v0.9-kodoku.103.ipa",
-          "size": 15166701,
-          "minOSVersion": "15.0",
-          "sha256": "4591b087a72ee7e103abb6fb1867db7ff2662b7d30eeb4a4002632c61b1a8ca1"
-        },
-        {
-          "version": "0.9",
-          "buildVersion": "102",
-          "date": "2026-11-27T15:04:40Z",
-          "localizedDescription": "Add PocketBase bidirectional sync core, Sync Status Dashboard, One-Time Setup Wizard, pb_schema.json export, Sync Logs viewer, and experimental recovery tools.",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.102/Kodoku-v0.9-kodoku.102.ipa",
-          "size": 14965574,
-          "minOSVersion": "15.0",
-          "sha256": "091f085b4dce3fd15cb1430f69b08ec629d868b047725335b94e2286c7b7ba48"
-        },
-        {
-          "version": "0.9",
-          "buildVersion": "101",
-          "date": "2026-11-27T12:20:50Z",
-          "localizedDescription": "Initial Kodoku SideStore/AltStore release (free Apple ID compatible, blue Kodoku icon).",
-          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.101/Kodoku-v0.9-kodoku.101.ipa",
-          "size": 14475650,
-          "minOSVersion": "15.0",
-          "sha256": "3e58480814c524c117c358ba66193f48cbae9383d6422d51b58a8b470814eedd"
+          "sha256": "be72000f12ca5d77728e6224b86724220d0de214c036b65a7a82a51c725c7781"
         }
       ]
     }
