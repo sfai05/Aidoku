@@ -12,6 +12,7 @@ import UIKit
 final class LibraryFilterSortCoordinator {
     weak var activeSheetState: LibraryFilterSortState?
     var isShowingActiveFiltersHeader = false
+    var lastTopHeaderHeight: CGFloat = 0
     var reloadGeneration = 0
     var activeReloadTask: Task<Void, Never>?
     var pendingLibraryLoad = false
@@ -67,10 +68,15 @@ extension LibraryViewController {
             : nil
     }
 
-    func refreshActiveFiltersHeader() {
+    func refreshActiveFiltersHeader(animatedCategoryScroll: Bool = false) {
         let showCategories = shouldShowCategoryBar
         let shouldShow = shouldShowActiveFiltersBar
-        if shouldShow != forkFilterSortCoordinator.isShowingActiveFiltersHeader {
+        let expectedHeight = LibraryTopHeaderView.totalHeight(
+            showCategories: showCategories,
+            showActiveFilters: shouldShow
+        )
+        if shouldShow != forkFilterSortCoordinator.isShowingActiveFiltersHeader
+            || expectedHeight != forkFilterSortCoordinator.lastTopHeaderHeight {
             collectionView.collectionViewLayout = makeCollectionViewLayout()
         }
         for case let header as LibraryTopHeaderView in collectionView.visibleSupplementaryViews(
@@ -79,7 +85,10 @@ extension LibraryViewController {
             header.configureVisibility(showCategories: showCategories, showActiveFilters: shouldShow)
             if showCategories {
                 header.categoryBarView.delegate = self
-                header.categoryBarView.configure(with: buildCategoryBarSnapshot(), animatedScroll: false)
+                header.categoryBarView.configure(
+                    with: buildCategoryBarSnapshot(),
+                    animatedScroll: animatedCategoryScroll
+                )
             }
             if shouldShow {
                 configureActiveFiltersHeader(header.activeFiltersView)
@@ -87,10 +96,10 @@ extension LibraryViewController {
         }
     }
 
-    func syncFilterSortUIState() {
+    func syncFilterSortUIState(animatedCategoryScroll: Bool = false) {
         forkFilterSortCoordinator.activeSheetState?.update(from: viewModel)
         updateFilterSortBarButton()
-        refreshActiveFiltersHeader()
+        refreshActiveFiltersHeader(animatedCategoryScroll: animatedCategoryScroll)
     }
 
     @objc func openFilterSortSheet() {

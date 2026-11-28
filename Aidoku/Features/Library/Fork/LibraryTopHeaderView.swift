@@ -11,6 +11,13 @@ import UIKit
 final class LibraryTopHeaderView: UICollectionReusableView {
     static let categoryBarHeight: CGFloat = 44
     static let activeFiltersHeight: CGFloat = 38
+    static let bottomPadding: CGFloat = 6
+
+    static func totalHeight(showCategories: Bool, showActiveFilters: Bool) -> CGFloat {
+        let contentHeight = (showCategories ? categoryBarHeight : 0)
+            + (showActiveFilters ? activeFiltersHeight : 0)
+        return contentHeight > 0 ? contentHeight + bottomPadding : 0
+    }
 
     let categoryBarView = LibraryCategoryBarHeaderView()
     let activeFiltersView = LibraryActiveFiltersHeaderView()
@@ -56,11 +63,14 @@ private extension LibraryTopHeaderView {
         let filtersHeight = activeFiltersView.heightAnchor.constraint(equalToConstant: Self.activeFiltersHeight)
         filtersHeight.priority = UILayoutPriority(999)
 
+        let stackBottom = stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.bottomPadding)
+        stackBottom.priority = UILayoutPriority(998)
+
         NSLayoutConstraint.activate([
             stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
             stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stackBottom,
             categoryHeight,
             filtersHeight
         ])

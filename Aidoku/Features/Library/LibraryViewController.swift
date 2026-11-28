@@ -439,8 +439,10 @@ class LibraryViewController: OldMangaCollectionViewController {
         let showCategories = shouldShowCategoryBar
         let showActiveFilters = shouldShowActiveFiltersBar
         // Fork: Single stacked top header prevents category bar and filter chips from overlapping
-        let topHeaderHeight = (showCategories ? LibraryTopHeaderView.categoryBarHeight : 0)
-            + (showActiveFilters ? LibraryTopHeaderView.activeFiltersHeight : 0)
+        let topHeaderHeight = LibraryTopHeaderView.totalHeight(
+            showCategories: showCategories,
+            showActiveFilters: showActiveFilters
+        )
         if topHeaderHeight > 0 {
             let topHeader = NSCollectionLayoutBoundarySupplementaryItem(
                 layoutSize: NSCollectionLayoutSize(
@@ -453,6 +455,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             boundaryItems.append(topHeader)
         }
         forkFilterSortCoordinator.isShowingActiveFiltersHeader = showActiveFilters
+        forkFilterSortCoordinator.lastTopHeaderHeight = topHeaderHeight
         config.boundarySupplementaryItems = boundaryItems
         layout.configuration = config
 
@@ -840,10 +843,10 @@ extension LibraryViewController {
             : NSLocalizedString("CATEGORY_LOCKED")
 
         updateNavbarLock()
+        // Fork: Sync filter UI and header layout height before refreshing category header on lock change
+        syncFilterSortUIState(animatedCategoryScroll: true)
         updateHeaderLockIcons()
         updateDataSource()
-        // Fork: Hide active filter chips when locked and restore them on unlock
-        syncFilterSortUIState()
     }
 
     func updateNavbarLock() {

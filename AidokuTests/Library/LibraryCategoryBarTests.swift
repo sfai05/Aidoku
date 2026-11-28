@@ -310,7 +310,7 @@ import UIKit
         #expect(layoutConfig?.boundarySupplementaryItems.count == 1)
         let topBoundary = layoutConfig?.boundarySupplementaryItems.first
         #expect(topBoundary?.elementKind == UICollectionView.elementKindSectionHeader)
-        #expect(topBoundary?.layoutSize.heightDimension.dimension == 82)
+        #expect(topBoundary?.layoutSize.heightDimension.dimension == 88)
 
         let topHeader = vc.collectionView
             .visibleSupplementaryViews(ofKind: UICollectionView.elementKindSectionHeader)
@@ -326,6 +326,7 @@ import UIKit
             #expect(abs(filtersFrame.minY - 44) < 0.01)
             #expect(filtersFrame.minY >= categoryFrame.maxY)
             #expect(!categoryFrame.intersects(filtersFrame))
+            #expect(abs((topHeader.bounds.height - filtersFrame.maxY) - LibraryTopHeaderView.bottomPadding) < 0.01)
         }
         #expect(topHeader?.categoryBarView.currentSnapshot?.selectedIndexPath == IndexPath(row: 0, section: 1))
 
@@ -340,7 +341,7 @@ import UIKit
 
         vc.clearAllFilters()
         let clearedConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
-        #expect(clearedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 44)
+        #expect(clearedConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 50)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
 
         vc.viewModel.categories = []
@@ -348,12 +349,77 @@ import UIKit
         vc.toggleFilterFromSheet(method: .downloaded)
         let filtersOnlyConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
         #expect(filtersOnlyConfig?.boundarySupplementaryItems.count == 1)
-        #expect(filtersOnlyConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 38)
+        #expect(filtersOnlyConfig?.boundarySupplementaryItems.first?.layoutSize.heightDimension.dimension == 44)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
 
         vc.clearAllFilters()
         let neitherConfig = (vc.collectionView.collectionViewLayout as? UICollectionViewCompositionalLayout)?.configuration
         #expect(neitherConfig?.boundarySupplementaryItems.isEmpty ?? false)
         await vc.forkFilterSortCoordinator.activeReloadTask?.value
+    }
+
+    @MainActor
+    @Test func topHeaderTotalHeightAndBottomPaddingAcrossAllModes() {
+        #expect(LibraryTopHeaderView.totalHeight(showCategories: false, showActiveFilters: false) == 0)
+        #expect(LibraryTopHeaderView.totalHeight(showCategories: true, showActiveFilters: false) == 50)
+        #expect(LibraryTopHeaderView.totalHeight(showCategories: false, showActiveFilters: true) == 44)
+        #expect(LibraryTopHeaderView.totalHeight(showCategories: true, showActiveFilters: true) == 88)
+
+        let zeroHeader = LibraryTopHeaderView(frame: .zero)
+        zeroHeader.configureVisibility(showCategories: true, showActiveFilters: true)
+        zeroHeader.setNeedsLayout()
+        zeroHeader.layoutIfNeeded()
+        #expect(!zeroHeader.bounds.width.isNaN && !zeroHeader.bounds.height.isNaN)
+        #expect(abs(zeroHeader.categoryBarView.bounds.height - 44) < 0.01)
+        #expect(abs(zeroHeader.activeFiltersView.bounds.height - 38) < 0.01)
+
+        let categoriesOnlyHeader = LibraryTopHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 50))
+        categoriesOnlyHeader.configureVisibility(showCategories: true, showActiveFilters: false)
+        categoriesOnlyHeader.setNeedsLayout()
+        categoriesOnlyHeader.layoutIfNeeded()
+        #expect(!categoriesOnlyHeader.categoryBarView.isHidden)
+        #expect(categoriesOnlyHeader.activeFiltersView.isHidden)
+        let catOnlyFrame = categoriesOnlyHeader.convert(
+            categoriesOnlyHeader.categoryBarView.bounds,
+            from: categoriesOnlyHeader.categoryBarView
+        )
+        #expect(abs(catOnlyFrame.minY) < 0.01)
+        #expect(abs(catOnlyFrame.height - 44) < 0.01)
+        #expect(abs((categoriesOnlyHeader.bounds.height - catOnlyFrame.maxY) - LibraryTopHeaderView.bottomPadding) < 0.01)
+
+        let filtersOnlyHeader = LibraryTopHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 44))
+        filtersOnlyHeader.configureVisibility(showCategories: false, showActiveFilters: true)
+        filtersOnlyHeader.setNeedsLayout()
+        filtersOnlyHeader.layoutIfNeeded()
+        #expect(filtersOnlyHeader.categoryBarView.isHidden)
+        #expect(!filtersOnlyHeader.activeFiltersView.isHidden)
+        let filtersOnlyFrame = filtersOnlyHeader.convert(
+            filtersOnlyHeader.activeFiltersView.bounds,
+            from: filtersOnlyHeader.activeFiltersView
+        )
+        #expect(abs(filtersOnlyFrame.minY) < 0.01)
+        #expect(abs(filtersOnlyFrame.height - 38) < 0.01)
+        #expect(abs((filtersOnlyHeader.bounds.height - filtersOnlyFrame.maxY) - LibraryTopHeaderView.bottomPadding) < 0.01)
+
+        let bothHeader = LibraryTopHeaderView(frame: CGRect(x: 0, y: 0, width: 390, height: 88))
+        bothHeader.configureVisibility(showCategories: true, showActiveFilters: true)
+        bothHeader.setNeedsLayout()
+        bothHeader.layoutIfNeeded()
+        #expect(!bothHeader.categoryBarView.isHidden)
+        #expect(!bothHeader.activeFiltersView.isHidden)
+        let bothCategoryFrame = bothHeader.convert(
+            bothHeader.categoryBarView.bounds,
+            from: bothHeader.categoryBarView
+        )
+        let bothFiltersFrame = bothHeader.convert(
+            bothHeader.activeFiltersView.bounds,
+            from: bothHeader.activeFiltersView
+        )
+        #expect(abs(bothCategoryFrame.minY) < 0.01)
+        #expect(abs(bothCategoryFrame.height - 44) < 0.01)
+        #expect(abs(bothFiltersFrame.minY - 44) < 0.01)
+        #expect(abs(bothFiltersFrame.height - 38) < 0.01)
+        #expect(!bothCategoryFrame.intersects(bothFiltersFrame))
+        #expect(abs((bothHeader.bounds.height - bothFiltersFrame.maxY) - LibraryTopHeaderView.bottomPadding) < 0.01)
     }
 }
