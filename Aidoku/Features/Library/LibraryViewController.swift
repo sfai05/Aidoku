@@ -169,50 +169,8 @@ class LibraryViewController: OldMangaCollectionViewController {
         collectionView.allowsMultipleSelection = !ProcessInfo.processInfo.isMacCatalystApp
         collectionView.allowsSelectionDuringEditing = true
 
-        // header view
-        let registration = UICollectionView.SupplementaryRegistration<LibraryCategorySelectionHeader>(
-            elementKind: UICollectionView.elementKindSectionHeader
-        ) { [weak self] header, _, _ in
-            guard let self, header.options.isEmpty else { return }
-
-            header.delegate = self
-            var options: [LibraryCategorySelectionHeader.Section] = []
-            if AppSettings.library.showUncategorizedCategory.get() {
-                options.append(.init(options: [NSLocalizedString("ALL"), NSLocalizedString("UNCATEGORIZED")]))
-            } else {
-                options.append(.init(options: [NSLocalizedString("ALL")]))
-            }
-            if !viewModel.categories.isEmpty {
-                options.append(.init(title: NSLocalizedString("CATEGORIES"), options: viewModel.categories))
-            }
-            if !viewModel.filterGroups.isEmpty {
-                options.append(.init(title: NSLocalizedString("FILTER_GROUPS"), options: viewModel.filterGroups.map { $0.title }))
-            }
-            header.options = options
-            if let currentCategory = viewModel.currentCategory {
-                if let index = viewModel.categories.firstIndex(of: currentCategory) {
-                    header.setSelectedOption(IndexPath(row: index, section: 1))
-                } else if let index = viewModel.filterGroups.firstIndex(where: { $0.title == currentCategory }) {
-                    header.setSelectedOption(IndexPath(row: index, section: viewModel.categories.isEmpty ? 1 : 2))
-                } else if currentCategory.isEmpty {
-                    header.setSelectedOption(.init(row: 1, section: 0))
-                }
-            }
-
-            // load locked icons
-            if AppSettings.library.lockLibrary.get() {
-                let lockedCategories = AppSettings.library.lockedCategories.get()
-                header.lockedOptions = [IndexPath(row: 0, section: 0)] + lockedCategories.compactMap { category -> IndexPath? in
-                    if let index = self.viewModel.categories.firstIndex(of: category) {
-                        return IndexPath(row: index, section: 1)
-                    }
-                    if let index = self.viewModel.filterGroups.firstIndex(where: { $0.title == category }) {
-                        return IndexPath(row: index, section: self.viewModel.categories.isEmpty ? 1 : 2)
-                    }
-                    return nil
-                }
-            }
-        }
+        // Fork: Horizontal scrollable category pill bar header
+        let registration = makeCategoryBarRegistration()
 
         // Fork: Active filter chips strip registration
         let activeFiltersRegistration = makeActiveFiltersRegistration()
@@ -499,7 +457,8 @@ class LibraryViewController: OldMangaCollectionViewController {
             let globalHeader = NSCollectionLayoutBoundarySupplementaryItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1),
-                    heightDimension: .absolute(40)
+                    // Fork: 44pt height for horizontal category pill bar
+                    heightDimension: .absolute(44)
                 ),
                 elementKind: UICollectionView.elementKindSectionHeader,
                 alignment: .top
@@ -933,63 +892,14 @@ extension LibraryViewController {
     }
 
     func updateHeaderLockIcons() {
-        guard let header = (collectionView.supplementaryView(
-            forElementKind: UICollectionView.elementKindSectionHeader, at: IndexPath(index: 0)
-        ) as? LibraryCategorySelectionHeader) else {
-            return
-        }
-        if AppSettings.library.lockLibrary.get() {
-            let lockedCategories = AppSettings.library.lockedCategories.get()
-            header.lockedOptions = [IndexPath(row: 0, section: 0)] + lockedCategories.compactMap { category -> IndexPath? in
-                if let index = self.viewModel.categories.firstIndex(of: category) {
-                    return IndexPath(row: index, section: 1)
-                }
-                if let index = self.viewModel.filterGroups.firstIndex(where: { $0.title == category }) {
-                    return IndexPath(row: index, section: self.viewModel.categories.isEmpty ? 1 : 2)
-                }
-                return nil
-            }
-        } else {
-            header.lockedOptions = []
-        }
+        // Fork: Refresh category pill bar lock icons and active selection
+        refreshCategoryBarHeader(animatedScroll: true)
     }
 
     // update category options in header
     func updateHeaderCategories() {
-        guard let header = (collectionView.supplementaryView(
-            forElementKind: UICollectionView.elementKindSectionHeader, at: IndexPath(index: 0)
-        ) as? LibraryCategorySelectionHeader) else {
-            return
-        }
-
-        ignoreOptionChange = true
-        defer { ignoreOptionChange = false }
-
-        var options: [LibraryCategorySelectionHeader.Section] = []
-        if AppSettings.library.showUncategorizedCategory.get() {
-            options.append(.init(options: [NSLocalizedString("ALL"), NSLocalizedString("UNCATEGORIZED")]))
-        } else {
-            options.append(.init(options: [NSLocalizedString("ALL")]))
-        }
-        if !viewModel.categories.isEmpty {
-            options.append(.init(title: NSLocalizedString("CATEGORIES"), options: viewModel.categories))
-        }
-        if !viewModel.filterGroups.isEmpty {
-            options.append(.init(title: NSLocalizedString("FILTER_GROUPS"), options: viewModel.filterGroups.map { $0.title }))
-        }
-        header.options = options
-
-        if let currentCategory = viewModel.currentCategory {
-            if let index = viewModel.categories.firstIndex(of: currentCategory) {
-                header.setSelectedOption(IndexPath(row: index, section: 1))
-            } else if let index = viewModel.filterGroups.firstIndex(where: { $0.title == currentCategory }) {
-                header.setSelectedOption(IndexPath(row: index, section: viewModel.categories.isEmpty ? 1 : 2))
-            } else if currentCategory.isEmpty {
-                header.setSelectedOption(.init(row: 1, section: 0))
-            }
-        } else {
-            header.setSelectedOption(.init(row: 0, section: 0))
-        }
+        // Fork: Refresh category pill bar items and active selection
+        refreshCategoryBarHeader()
     }
 }
 
