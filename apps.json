@@ -31,6 +31,16 @@
       "versions": [
         {
           "version": "0.9",
+          "buildVersion": "109",
+          "date": "2026-11-28T15:35:19Z",
+          "localizedDescription": "Adds Dokuha's custom Light, Dark, and Tinted monochrome manga screentone app icon alongside Library UI and Filter & Sort refinements:\n\n• New Light, Dark, and Tinted monochrome manga screentone app icon (\"読破！\" with \"ドク\"/\"ハ\" furigana) and opaque sRGB SideStore/AltStore fallback PNGs (#45)\n• Polish Library UI: hide redundant in-library search bar, add non-overlapping active filter chips stack with horizontal edge fade, strengthen cover title contrast scrim, and add iOS 26 floating tab bar bottom clearance (#30, #32, #36, #38)\n• Improve Library Filter & Sort sheet hierarchy, live match count, contrast-aware pill/chip foregrounds, Dynamic Type updates, and regular-width iPad popover presentation (#34, #40, #42)\n• Center Library empty and locked state views cleanly within safe area bounds (#44)",
+          "downloadURL": "https://github.com/sfai05/Aidoku/releases/download/v0.9-dokuha.109/Dokuha-v0.9-dokuha.109.ipa",
+          "size": 15021235,
+          "minOSVersion": "15.0",
+          "sha256": "699ceaba60274d4391020aab4ded006732273ed8db2793ab622f675f38b865b8"
+        },
+        {
+          "version": "0.9",
           "buildVersion": "107",
           "date": "2026-11-28T01:05:17Z",
           "localizedDescription": "Rebranded from Kodoku to Dokuha (\"io.github.sfai05.Dokuha\", default PocketBase collection \"dokuha_sync_snapshots\", keeping the existing app icon), plus new Library & Metadata features:\n\n• Rename app branding, bundle ID, SideStore/AltStore source metadata, and PocketBase default schema to Dokuha (#28)\n• Replace Library category dropdown with a one-tap horizontal capsule pill bar (#27)\n• Add Library Filter & Sort bottom sheet with tri-state filters and removable active filter chips (#25)\n• Allow editing per-manga Content Rating and mapping it from MangaBaka metadata pulls (#23)\n\nMigration Note: Because the bundle identifier changed from \"io.github.sfai05.Kodoku\" to \"io.github.sfai05.Dokuha\", install Dokuha as a fresh app in SideStore/AltStore (if SideStore warns about the updated source identifier, remove and re-add the \"apps.json\" source URL). On existing PocketBase servers, rename \"kodoku_sync_snapshots\" to \"dokuha_sync_snapshots\" (or recreate via Setup Wizard / \"docs/sync/pb_schema.json\"), or set the legacy collection name in Sync Settings.",
