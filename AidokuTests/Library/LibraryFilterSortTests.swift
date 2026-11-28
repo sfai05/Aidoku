@@ -6,6 +6,8 @@
 //
 
 @testable import Aidoku
+import AidokuRunner
+import SwiftUI
 import Testing
 import UIKit
 
@@ -472,5 +474,124 @@ import UIKit
         vc.locked = false
         vc.updateLockState()
         #expect(vc.filterSortBarButton.isEnabled)
+    }
+
+    @Test func detentHeightResultTextAndEmptyHighlightHelpers() {
+        #expect(LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: -10) == 0)
+        #expect(LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: 0) == 0)
+
+        let compactHeight = LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: 340)
+        #expect(abs(compactHeight - 340) < 0.01)
+
+        let smallPhoneHeight = LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: 600)
+        #expect(abs(smallPhoneHeight - 460) < 0.01)
+
+        let standardPhoneHeight = LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: 780)
+        #expect(abs(standardPhoneHeight - (780 * 0.62)) < 0.01)
+
+        let tallSheetHeight = LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: 1000)
+        #expect(abs(tallSheetHeight - 620) < 0.01)
+
+        for maxHeight in [CGFloat(120), 340, 600, 780, 1000] {
+            let resolved = LibraryFilterSortHelpers.preferredSheetDetentHeight(maximumDetentValue: maxHeight)
+            #expect(resolved > 0 && resolved <= maxHeight)
+        }
+
+        #expect(LibraryFilterSortHelpers.resultCountText(for: -5) == ForkL10n.format("LIBRARY_FILTER_RESULTS_COUNT_FORMAT", 0))
+        #expect(LibraryFilterSortHelpers.resultCountText(for: 0) == ForkL10n.format("LIBRARY_FILTER_RESULTS_COUNT_FORMAT", 0))
+        #expect(LibraryFilterSortHelpers.resultCountText(for: 1) == ForkL10n.string("LIBRARY_FILTER_RESULT_SINGLE"))
+        #expect(LibraryFilterSortHelpers.resultCountText(for: 42) == ForkL10n.format("LIBRARY_FILTER_RESULTS_COUNT_FORMAT", 42))
+
+        #expect(!LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 0, activeFilterCount: 0, isUpdatingResults: false))
+        #expect(LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 0, activeFilterCount: 1, isUpdatingResults: false))
+        #expect(!LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 0, activeFilterCount: 1, isUpdatingResults: true))
+        #expect(!LibraryFilterSortHelpers.shouldHighlightEmptyResults(resultCount: 5, activeFilterCount: 1, isUpdatingResults: false))
+    }
+
+    @MainActor
+    @Test func sheetStateTracksCombinedResultCountAndUpdatingFlag() {
+        let snapshot = snapshotUserDefaults()
+        defer { restoreUserDefaults(snapshot) }
+
+        let viewModel = LibraryViewModel()
+        let m1 = MangaInfo(id: MangaIdentifier(sourceKey: "src", mangaKey: "m1"))
+        let m2 = MangaInfo(id: MangaIdentifier(sourceKey: "src", mangaKey: "m2"))
+        let m3 = MangaInfo(id: MangaIdentifier(sourceKey: "src", mangaKey: "m3"))
+        viewModel.pinnedManga = [m1]
+        viewModel.manga = [m2, m3]
+
+        let state = LibraryFilterSortState(viewModel: viewModel)
+        #expect(state.resultCount == 3)
+        #expect(!state.isUpdatingResults)
+
+        viewModel.pinnedManga = []
+        viewModel.manga = [m1]
+        state.update(from: viewModel, isUpdatingResults: true)
+        #expect(state.resultCount == 1)
+        #expect(state.isUpdatingResults)
+
+        state.update(from: viewModel, isUpdatingResults: false)
+        #expect(state.resultCount == 1)
+        #expect(!state.isUpdatingResults)
+    }
+
+    @MainActor
+    @Test func filterSortSheetPresentationDetentsAndLiveReloadState() async {
+        let snapshot = snapshotUserDefaults()
+        defer { restoreUserDefaults(snapshot) }
+
+        AppSettings.library.lockLibrary.set(false)
+        AppSettings.library.lockedCategories.set([])
+
+        let detents = LibraryViewController.makeFilterSortSheetDetents()
+        #expect(detents.count == 2)
+        if #available(iOS 16.0, *) {
+            #expect(detents[0].identifier == UISheetPresentationController.Detent.Identifier("libraryFilterSortPreferred"))
+            #expect(detents[1].identifier == .large)
+        }
+
+        let vc = LibraryViewController()
+        let nav = UINavigationController(rootViewController: vc)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = nav
+        window.makeKeyAndVisible()
+        defer {
+            vc.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        vc.loadViewIfNeeded()
+        vc.locked = false
+        vc.viewModel.pinnedManga = [MangaInfo(id: MangaIdentifier(sourceKey: "src", mangaKey: "p1"))]
+        vc.viewModel.manga = [MangaInfo(id: MangaIdentifier(sourceKey: "src", mangaKey: "r1"))]
+        vc.openFilterSortSheet()
+
+        let hostingController = vc.presentedViewController as? UIHostingController<LibraryFilterSortSheet>
+        #expect(hostingController != nil)
+        #expect(hostingController?.view.backgroundColor == .systemGroupedBackground)
+        #expect(hostingController?.sheetPresentationController?.detents.count == 2)
+        #expect(hostingController?.sheetPresentationController?.prefersGrabberVisible == true)
+        #expect(vc.forkFilterSortCoordinator.activeSheetState?.resultCount == 2)
+        #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == false)
+
+        let toggledSortMethod: LibraryViewModel.SortMethod = vc.viewModel.sortMethod == .alphabetical
+            ? .lastUpdated
+            : .alphabetical
+        vc.selectSortFromSheet(method: toggledSortMethod)
+        #expect(!vc.forkFilterSortCoordinator.isLoadingResults)
+        #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == false)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+
+        vc.toggleFilterFromSheet(method: .downloaded)
+        #expect(vc.forkFilterSortCoordinator.isLoadingResults)
+        #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == true)
+        await vc.forkFilterSortCoordinator.activeReloadTask?.value
+        #expect(!vc.forkFilterSortCoordinator.isLoadingResults)
+        #expect(vc.forkFilterSortCoordinator.activeSheetState?.isUpdatingResults == false)
+        #expect(
+            vc.forkFilterSortCoordinator.activeSheetState?.resultCount
+                == vc.viewModel.pinnedManga.count + vc.viewModel.manga.count
+        )
     }
 }

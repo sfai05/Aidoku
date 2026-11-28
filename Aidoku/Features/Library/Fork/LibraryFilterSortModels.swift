@@ -5,6 +5,7 @@
 //  Created by Dokuha on 11/27/26.
 //
 
+import CoreGraphics
 import Foundation
 
 /// Represents the three-state cycle of a library filter option.
@@ -121,6 +122,29 @@ enum LibraryFilterSortHelpers {
             )
         }
     }
+
+    static func preferredSheetDetentHeight(maximumDetentValue: CGFloat) -> CGFloat {
+        guard maximumDetentValue > 0 else { return 0 }
+        let proportional = maximumDetentValue * 0.62
+        let minimumComfortable = min(460, maximumDetentValue)
+        return min(maximumDetentValue, max(proportional, minimumComfortable))
+    }
+
+    static func resultCountText(for count: Int) -> String {
+        let clamped = max(0, count)
+        if clamped == 1 {
+            return ForkL10n.string("LIBRARY_FILTER_RESULT_SINGLE")
+        }
+        return ForkL10n.format("LIBRARY_FILTER_RESULTS_COUNT_FORMAT", clamped)
+    }
+
+    static func shouldHighlightEmptyResults(
+        resultCount: Int,
+        activeFilterCount: Int,
+        isUpdatingResults: Bool
+    ) -> Bool {
+        resultCount == 0 && activeFilterCount > 0 && !isUpdatingResults
+    }
 }
 
 /// Observable bridge keeping the presented Filter & Sort sheet synchronized with `LibraryViewModel`.
@@ -133,12 +157,14 @@ final class LibraryFilterSortState: ObservableObject {
     @Published var categories: [String]
     @Published var isViewingFilterGroup: Bool
     @Published var activeFilterGroupTitle: String?
+    @Published var resultCount: Int
+    @Published var isUpdatingResults: Bool
 
     var activeFilterCount: Int {
         filters.count
     }
 
-    init(viewModel: LibraryViewModel) {
+    init(viewModel: LibraryViewModel, isUpdatingResults: Bool = false) {
         let groupTitle = Self.resolveFilterGroupTitle(from: viewModel)
         self.filters = viewModel.filters
         self.sortMethod = viewModel.sortMethod
@@ -147,9 +173,11 @@ final class LibraryFilterSortState: ObservableObject {
         self.categories = viewModel.categories
         self.isViewingFilterGroup = groupTitle != nil
         self.activeFilterGroupTitle = groupTitle
+        self.resultCount = Self.resolveResultCount(from: viewModel)
+        self.isUpdatingResults = isUpdatingResults
     }
 
-    func update(from viewModel: LibraryViewModel) {
+    func update(from viewModel: LibraryViewModel, isUpdatingResults: Bool = false) {
         let groupTitle = Self.resolveFilterGroupTitle(from: viewModel)
         filters = viewModel.filters
         sortMethod = viewModel.sortMethod
@@ -158,10 +186,16 @@ final class LibraryFilterSortState: ObservableObject {
         categories = viewModel.categories
         isViewingFilterGroup = groupTitle != nil
         activeFilterGroupTitle = groupTitle
+        resultCount = Self.resolveResultCount(from: viewModel)
+        self.isUpdatingResults = isUpdatingResults
     }
 
     private static func resolveFilterGroupTitle(from viewModel: LibraryViewModel) -> String? {
         guard let title = viewModel.currentCategory else { return nil }
         return viewModel.filterGroups.contains { $0.title == title } ? title : nil
+    }
+
+    private static func resolveResultCount(from viewModel: LibraryViewModel) -> Int {
+        viewModel.pinnedManga.count + viewModel.manga.count
     }
 }
