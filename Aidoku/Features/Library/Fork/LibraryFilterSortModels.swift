@@ -130,6 +130,15 @@ enum LibraryFilterSortHelpers {
         return min(maximumDetentValue, max(proportional, minimumComfortable))
     }
 
+    static let preferredPopoverContentSize = CGSize(width: 400, height: 540)
+
+    static func shouldPresentAsPopover(
+        isPad: Bool,
+        isRegularWidth: Bool
+    ) -> Bool {
+        isPad && isRegularWidth
+    }
+
     static func resultCountText(for count: Int) -> String {
         let clamped = max(0, count)
         if clamped == 1 {
