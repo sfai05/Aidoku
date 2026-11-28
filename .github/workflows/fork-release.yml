@@ -1,4 +1,4 @@
-name: Kodoku Release & SideStore Source
+name: Dokuha Release & SideStore Source
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (optional; defaults to v<version>-kodoku.<build>)"
+        description: "Release tag (optional; defaults to v<version>-dokuha.<build>)"
         required: false
         type: string
       build_number:
@@ -63,7 +63,7 @@ jobs:
           fi
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Archive unsigned Kodoku IPA
+      - name: Archive unsigned Dokuha IPA
         env:
           BUILD_NUMBER: ${{ steps.build_num.outputs.build_number }}
         run: |
@@ -72,7 +72,7 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             archive \
-            -archivePath build/Kodoku.xcarchive \
+            -archivePath build/Dokuha.xcarchive \
             -skipPackagePluginValidation \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             DEVELOPMENT_TEAM= \
@@ -91,14 +91,14 @@ jobs:
           python3 - <<'PY'
           import os, plistlib, re
 
-          plist_path = "build/Kodoku.xcarchive/Products/Applications/Aidoku.app/Info.plist"
+          plist_path = "build/Dokuha.xcarchive/Products/Applications/Aidoku.app/Info.plist"
           with open(plist_path, "rb") as f:
               info = plistlib.load(f)
 
-          assert info.get("CFBundleIdentifier") == "io.github.sfai05.Kodoku", (
+          assert info.get("CFBundleIdentifier") == "io.github.sfai05.Dokuha", (
               f"Unexpected CFBundleIdentifier: {info.get('CFBundleIdentifier')}"
           )
-          assert info.get("CFBundleDisplayName") == "Kodoku", (
+          assert info.get("CFBundleDisplayName") == "Dokuha", (
               f"Unexpected CFBundleDisplayName: {info.get('CFBundleDisplayName')}"
           )
           assert info.get("CFBundleVersion") == os.environ["EXPECTED_BUILD_NUMBER"], (
@@ -116,7 +116,7 @@ jobs:
           elif os.environ["INPUT_TAG"]:
               release_tag = os.environ["INPUT_TAG"]
           else:
-              release_tag = f"v{marketing_version}-kodoku.{os.environ['EXPECTED_BUILD_NUMBER']}"
+              release_tag = f"v{marketing_version}-dokuha.{os.environ['EXPECTED_BUILD_NUMBER']}"
 
           if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", release_tag):
               raise ValueError(f"Invalid release tag: {release_tag!r}")
@@ -131,16 +131,16 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
         run: |
-          IPA_NAME="Kodoku-${RELEASE_TAG}.ipa"
+          IPA_NAME="Dokuha-${RELEASE_TAG}.ipa"
           mkdir -p build/ipa/Payload
-          cp -R build/Kodoku.xcarchive/Products/Applications/Aidoku.app build/ipa/Payload/Aidoku.app
+          cp -R build/Dokuha.xcarchive/Products/Applications/Aidoku.app build/ipa/Payload/Aidoku.app
           (cd build/ipa && zip -qr "../../${IPA_NAME}" Payload)
           echo "ipa_name=$IPA_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kodoku-ipa
+          name: dokuha-ipa
           path: ${{ steps.package.outputs.ipa_name }}
           if-no-files-found: error
 
@@ -157,7 +157,7 @@ jobs:
       - name: Download IPA artifact
         uses: actions/download-artifact@v4
         with:
-          name: kodoku-ipa
+          name: dokuha-ipa
 
       - name: Publish GitHub Release
         id: release
@@ -190,13 +190,13 @@ jobs:
               gh release create "$RELEASE_TAG" "$IPA_NAME" \
                 --repo "$REPO" \
                 --target "$TARGET_SHA" \
-                --title "Kodoku $RELEASE_TAG" \
+                --title "Dokuha $RELEASE_TAG" \
                 --notes-file "$NOTES_FILE"
             else
               gh release create "$RELEASE_TAG" "$IPA_NAME" \
                 --repo "$REPO" \
                 --target "$TARGET_SHA" \
-                --title "Kodoku $RELEASE_TAG" \
+                --title "Dokuha $RELEASE_TAG" \
                 --generate-notes
             fi
           fi
@@ -284,7 +284,7 @@ jobs:
           DOWNLOAD_URL: ${{ steps.release.outputs.download_url }}
         run: |
           {
-            echo "## Kodoku Release Published (${RELEASE_TAG})"
+            echo "## Dokuha Release Published (${RELEASE_TAG})"
             echo "- **GitHub Release**: ${RELEASE_URL}"
             echo "- **IPA Asset**: ${DOWNLOAD_URL}"
             echo "- **SideStore / AltStore Source URL**: \`https://raw.githubusercontent.com/${REPO}/altstore/apps.json\`"

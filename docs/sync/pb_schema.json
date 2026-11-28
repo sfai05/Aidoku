@@ -63,10 +63,10 @@
       }
     ],
     "indexes" : [
-      "CREATE UNIQUE INDEX idx_kodoku_sync_snapshots_owner_revision ON kodoku_sync_snapshots (owner, revision)"
+      "CREATE UNIQUE INDEX idx_dokuha_sync_snapshots_owner_revision ON dokuha_sync_snapshots (owner, revision)"
     ],
     "listRule" : "@request.auth.id != \"\" && owner = @request.auth.id",
-    "name" : "kodoku_sync_snapshots",
+    "name" : "dokuha_sync_snapshots",
     "system" : false,
     "type" : "base",
     "updateRule" : null,

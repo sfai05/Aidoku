@@ -6,9 +6,9 @@
 //
 
 // Fork: Default fork app identity (all overridable in untracked ../Local.xcconfig).
-APP_DISPLAY_NAME                  = Kodoku
+APP_DISPLAY_NAME                  = Dokuha
 APP_ID_PREFIX                     = io.github.sfai05
-APP_ID_SUFFIX                     = Kodoku
+APP_ID_SUFFIX                     = Dokuha
 
 PRODUCT_BUNDLE_IDENTIFIER         = $(APP_ID_PREFIX).$(APP_ID_SUFFIX)
 INFOPLIST_KEY_CFBundleDisplayName = $(APP_DISPLAY_NAME)

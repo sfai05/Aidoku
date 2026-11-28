@@ -2,7 +2,7 @@
 //  TrackerMetadataModels.swift
 //  Aidoku
 //
-//  Created by Kodoku on 11/27/26.
+//  Created by Dokuha on 11/27/26.
 //
 
 import AidokuRunner

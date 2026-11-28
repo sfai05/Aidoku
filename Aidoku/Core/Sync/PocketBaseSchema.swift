@@ -73,7 +73,7 @@ struct PocketBaseCollectionPayload: Codable, Equatable, Sendable {
 }
 
 enum PocketBaseSchema {
-    static let defaultCollectionName = "kodoku_sync_snapshots"
+    static let defaultCollectionName = "dokuha_sync_snapshots"
     static let defaultUsersCollectionId = "_pb_users_auth_"
     static let maxPayloadSizeBytes = 52_428_800
     static let requiredFieldNames: Set<String> = [

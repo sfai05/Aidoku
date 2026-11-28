@@ -1,10 +1,10 @@
-# Kodoku (`sfai05/Aidoku` Fork)
+# Dokuha (`sfai05/Aidoku` Fork)
 
-**Kodoku** (`io.github.sfai05.Kodoku`) is a personal fork of [Aidoku](https://github.com/Aidoku/Aidoku) designed for **free Apple ID / SideStore sideloading** and **self-hostable cross-device sync via PocketBase**, while keeping upstream merges minimal and cleanly isolated.
+**Dokuha** (`io.github.sfai05.Dokuha`) is a personal fork of [Aidoku](https://github.com/Aidoku/Aidoku) designed for **free Apple ID / SideStore sideloading** and **self-hostable cross-device sync via PocketBase**, while keeping upstream merges minimal and cleanly isolated.
 
 ## Differences vs. Upstream Aidoku
 
-| Area | Upstream Aidoku | Kodoku (`sfai05/Aidoku`) |
+| Area | Upstream Aidoku | Dokuha (`sfai05/Aidoku`) |
 |---|---|---|
 | **Signing & Entitlements** | Uses CloudKit, Push Notifications (`aps-environment`), and custom fonts entitlement | Removes paid-developer-only entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity, `user-fonts`, `remote-notification`) so it builds and runs cleanly with a free Apple ID (Personal Team); keeps local notifications and `BGProcessingTask` / `fetch` |
 | **Cross-Device Sync** | `NSPersistentCloudKitContainer` (iCloud / CloudKit) | **PocketBase Sync Engine** (`SyncStorageProvider` + `SyncEnvelope` gzip snapshots with `revision` optimistic locking, SHA-256 verification, tombstones, and non-destructive background smart merge) |
@@ -16,13 +16,13 @@
 | **Library Category Bar** | Single dropdown menu (`All v`) requiring two taps to switch categories | One-tap horizontal scrollable capsule pill bar with lock indicators, distinct Filter Group pill styling, auto-scroll to active selection, and a trailing quick-jump menu when 5+ items exist |
 | **Upstream Isolation** | Core codebase + `Localizable.strings` | New fork code lives cleanly in `Aidoku/Core/Sync/`, `Aidoku/Features/Settings/Sync/`, `Aidoku/Core/Metadata/`, `Aidoku/Features/Manga/Metadata/`, `Aidoku/Features/Library/Fork/`, `Aidoku/Core/Tracking/Fork/`, and `Aidoku/Features/Settings/Tracking/` with separate `ForkLocalizable.strings` (`en` / `zh-Hant`), `ForkSync.`/`Fork.` defaults keys, isolated fork CI workflows (`fork-release.yml`, Ubuntu-based `fork-lint.yml`), and zero edits to `Aidoku.xcdatamodeld` or `project.pbxproj` |
 
-### Installing Kodoku (SideStore / AltStore)
+### Installing Dokuha (SideStore / AltStore)
 
 1. Open **SideStore** (recommended) or **AltStore**, navigate to **Sources**, and add:
    ```
    https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json
    ```
-2. Install **Kodoku** (or upgrade in-place when new builds publish), or download the latest unsigned `.ipa` from [GitHub Releases](https://github.com/sfai05/Aidoku/releases).
+2. Install **Dokuha** (or upgrade in-place when new builds publish), or download the latest unsigned `.ipa` from [GitHub Releases](https://github.com/sfai05/Aidoku/releases).
 3. To enable cross-device sync, open **Settings → PocketBase Sync**, create the collection with the **One-Time Setup Wizard** (or import `docs/sync/pb_schema.json` in PocketBase Admin UI `/_/`), and sign in with a regular PocketBase **`users`** collection account on each device.
 
 > Note: Sync transfers your library, manga edits, reading history, chapters, categories, tracking links, reading sessions, updates, vocabulary, custom source configs, and source list URLs. Safe app settings are **off by default** (and sensitive keys matching `login`/`password`/`token`/`auth`/`cookie` are stripped even when enabled). External `.aix` sources and offline downloads are installed per device.

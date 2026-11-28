@@ -2,7 +2,7 @@
 //  LibraryCategoryBarTests.swift
 //  AidokuTests
 //
-//  Created by Kodoku on 11/28/26.
+//  Created by Dokuha on 11/28/26.
 //
 
 @testable import Aidoku

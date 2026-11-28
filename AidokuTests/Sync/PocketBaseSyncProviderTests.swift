@@ -211,7 +211,7 @@ private actor MockHTTPClient: SyncHTTPClient {
                 return (200, Data(#"{"token":"file-tok-1"}"#.utf8))
             },
             { request in
-                #expect(request.url?.path == "/api/files/kodoku_sync_snapshots/rec_007/snapshot_r7.aidoku.gz")
+                #expect(request.url?.path == "/api/files/dokuha_sync_snapshots/rec_007/snapshot_r7.aidoku.gz")
                 #expect(request.url?.query?.contains("token=file-tok-1") == true)
                 return (200, validGzip)
             },
@@ -308,7 +308,7 @@ private actor MockHTTPClient: SyncHTTPClient {
                 return (200, Data(#"{"token":"su-token-temp","record":{"id":"su1","email":"admin@example.com"}}"#.utf8))
             },
             { request in
-                #expect(request.url?.path == "/api/collections/kodoku_sync_snapshots")
+                #expect(request.url?.path == "/api/collections/dokuha_sync_snapshots")
                 #expect(request.value(forHTTPHeaderField: "Authorization") == "su-token-temp")
                 return (404, Data(#"{"status":404}"#.utf8))
             },
@@ -320,7 +320,7 @@ private actor MockHTTPClient: SyncHTTPClient {
                 #expect(request.url?.path == "/api/collections")
                 let body = request.httpBody ?? Data()
                 let decoded = try JSONDecoder().decode(PocketBaseCollectionPayload.self, from: body)
-                #expect(decoded.name == "kodoku_sync_snapshots")
+                #expect(decoded.name == "dokuha_sync_snapshots")
                 #expect(decoded.updateRule == nil)
                 let ownerField = decoded.fields.first { $0.name == "owner" }
                 let payloadField = decoded.fields.first { $0.name == "payload" }
@@ -328,7 +328,7 @@ private actor MockHTTPClient: SyncHTTPClient {
                 #expect(ownerField?.cascadeDelete == true)
                 #expect(payloadField?.protected == true)
                 #expect(decoded.indexes.count == 1)
-                return (200, Data(#"{"id":"col_123","name":"kodoku_sync_snapshots"}"#.utf8))
+                return (200, Data(#"{"id":"col_123","name":"dokuha_sync_snapshots"}"#.utf8))
             }
         ])
 
@@ -341,12 +341,12 @@ private actor MockHTTPClient: SyncHTTPClient {
 
         let result = try await provider.provisionCollection(
             serverURL: "https://pb.example.com",
-            collectionName: "kodoku_sync_snapshots",
+            collectionName: "dokuha_sync_snapshots",
             superuserEmail: "admin@example.com",
             superuserPassword: "super-secret-password"
         )
 
-        #expect(result == .created(collectionName: "kodoku_sync_snapshots"))
+        #expect(result == .created(collectionName: "dokuha_sync_snapshots"))
         // Superuser credentials and admin tokens are strictly transient and never stored.
         #expect(try keychain.readString(account: SyncKeychainAccount.pocketBaseAuthToken) == nil)
         #expect(try keychain.readString(account: SyncKeychainAccount.pocketBaseUserId) == nil)
@@ -409,7 +409,7 @@ private actor MockHTTPClient: SyncHTTPClient {
         #expect(updatedField.onUpdate == true)
 
         #expect(collection.indexes == [
-            "CREATE UNIQUE INDEX idx_kodoku_sync_snapshots_owner_revision ON kodoku_sync_snapshots (owner, revision)"
+            "CREATE UNIQUE INDEX idx_dokuha_sync_snapshots_owner_revision ON dokuha_sync_snapshots (owner, revision)"
         ])
     }
 }
@@ -593,7 +593,7 @@ private actor MockHTTPClient: SyncHTTPClient {
             {"name":"payload","type":"file","protected":true}
           ],
           "indexes": [
-            "CREATE UNIQUE INDEX `idx_owner_rev` ON `kodoku_sync_snapshots` (`owner`, `revision`)"
+            "CREATE UNIQUE INDEX `idx_owner_rev` ON `dokuha_sync_snapshots` (`owner`, `revision`)"
           ]
         }
         """
@@ -614,7 +614,7 @@ private actor MockHTTPClient: SyncHTTPClient {
 
         let badResult = try await provider.provisionCollection(
             serverURL: "https://pb.example.com",
-            collectionName: "kodoku_sync_snapshots",
+            collectionName: "dokuha_sync_snapshots",
             superuserEmail: "admin@example.com",
             superuserPassword: "pw"
         )
@@ -627,12 +627,12 @@ private actor MockHTTPClient: SyncHTTPClient {
 
         let goodResult = try await provider.provisionCollection(
             serverURL: "https://pb.example.com",
-            collectionName: "kodoku_sync_snapshots",
+            collectionName: "dokuha_sync_snapshots",
             superuserEmail: "admin@example.com",
             superuserPassword: "pw"
         )
         #expect(goodResult == .alreadyExists(
-            collectionName: "kodoku_sync_snapshots",
+            collectionName: "dokuha_sync_snapshots",
             missingFields: [],
             configurationIssues: []
         ))

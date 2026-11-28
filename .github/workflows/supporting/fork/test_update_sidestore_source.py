@@ -23,15 +23,15 @@ TEMPLATE_PATH = os.path.join(
 
 def create_synthetic_ipa(
     directory: str,
-    bundle_id: str = "io.github.sfai05.Kodoku",
+    bundle_id: str = "io.github.sfai05.Dokuha",
     version: str = "0.9",
     build_version: str = "101",
     min_os: str = "15.0",
-    display_name: str = "Kodoku",
+    display_name: str = "Dokuha",
     include_plist: bool = True,
 ) -> str:
     """Create a minimal .ipa zip archive for testing."""
-    ipa_path = os.path.join(directory, "Kodoku-test.ipa")
+    ipa_path = os.path.join(directory, "Dokuha-test.ipa")
     plist_data = {}
     if version is not None:
         plist_data["CFBundleShortVersionString"] = version
@@ -62,15 +62,16 @@ class TestUpdateSideStoreSource(unittest.TestCase):
         with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        self.assertEqual(data["name"], "Kodoku")
+        self.assertEqual(data["name"], "Dokuha")
+        self.assertEqual(data["identifier"], "io.github.sfai05.dokuha.source")
         self.assertEqual(
             data["sourceURL"],
             "https://raw.githubusercontent.com/sfai05/Aidoku/altstore/apps.json",
         )
-        self.assertEqual(data["featuredApps"], ["io.github.sfai05.Kodoku"])
+        self.assertEqual(data["featuredApps"], ["io.github.sfai05.Dokuha"])
         app = data["apps"][0]
-        self.assertEqual(app["name"], "Kodoku")
-        self.assertEqual(app["bundleIdentifier"], "io.github.sfai05.Kodoku")
+        self.assertEqual(app["name"], "Dokuha")
+        self.assertEqual(app["bundleIdentifier"], "io.github.sfai05.Dokuha")
         self.assertEqual(app["tintColor"], "1F6BFF")
         self.assertEqual(app["appPermissions"]["entitlements"], [])
         self.assertIn("NSFaceIDUsageDescription", app["appPermissions"]["privacy"])
@@ -87,9 +88,9 @@ class TestUpdateSideStoreSource(unittest.TestCase):
                 {
                     "version": "0.9",
                     "buildVersion": "101",
-                    "bundleIdentifier": "io.github.sfai05.Kodoku",
+                    "bundleIdentifier": "io.github.sfai05.Dokuha",
                     "minOSVersion": "15.0",
-                    "displayName": "Kodoku",
+                    "displayName": "Dokuha",
                 },
             )
 
@@ -131,12 +132,12 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             "buildVersion": "101",
             "date": "2026-11-27T12:00:00Z",
             "localizedDescription": "Initial release",
-            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.101.ipa",
+            "downloadURL": "https://example.com/Dokuha-v0.9-dokuha.101.ipa",
             "size": 12345,
             "minOSVersion": "15.0",
         }
         first = updater.merge_source_json(
-            template, None, v1, "io.github.sfai05.Kodoku"
+            template, None, v1, "io.github.sfai05.Dokuha"
         )
         self.assertEqual(len(first["apps"][0]["versions"]), 1)
 
@@ -146,12 +147,12 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             "buildVersion": "102",
             "date": "2026-11-28T09:00:00Z",
             "localizedDescription": "Updated release",
-            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.102.ipa",
+            "downloadURL": "https://example.com/Dokuha-v0.9-dokuha.102.ipa",
             "size": 23456,
             "minOSVersion": "15.0",
         }
         second = updater.merge_source_json(
-            template, first, v2, "io.github.sfai05.Kodoku"
+            template, first, v2, "io.github.sfai05.Dokuha"
         )
         self.assertEqual(
             [v["buildVersion"] for v in second["apps"][0]["versions"]],
@@ -165,12 +166,12 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             "buildVersion": "103",
             "date": "2026-11-29T10:00:00Z",
             "localizedDescription": "Re-built release",
-            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.102.ipa",
+            "downloadURL": "https://example.com/Dokuha-v0.9-dokuha.102.ipa",
             "size": 24000,
             "minOSVersion": "15.0",
         }
         third = updater.merge_source_json(
-            template, second, v2_clobbered, "io.github.sfai05.Kodoku"
+            template, second, v2_clobbered, "io.github.sfai05.Dokuha"
         )
         self.assertEqual(
             [v["buildVersion"] for v in third["apps"][0]["versions"]],
@@ -183,17 +184,59 @@ class TestUpdateSideStoreSource(unittest.TestCase):
             "buildVersion": "100",
             "date": "2026-11-26T08:00:00Z",
             "localizedDescription": "Older release",
-            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.100.ipa",
+            "downloadURL": "https://example.com/Dokuha-v0.9-dokuha.100.ipa",
             "size": 11111,
             "minOSVersion": "15.0",
         }
         fourth = updater.merge_source_json(
-            template, third, older, "io.github.sfai05.Kodoku"
+            template, third, older, "io.github.sfai05.Dokuha"
         )
         self.assertEqual(
             [v["buildVersion"] for v in fourth["apps"][0]["versions"]],
             ["103", "101", "100"],
         )
+
+    def test_merge_ignores_legacy_bundle_id_versions(self) -> None:
+        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
+            template = json.load(f)
+
+        legacy_existing = {
+            "name": "Kodoku",
+            "identifier": "io.github.sfai05.kodoku.source",
+            "apps": [
+                {
+                    "name": "Kodoku",
+                    "bundleIdentifier": "io.github.sfai05.Kodoku",
+                    "versions": [
+                        {
+                            "version": "0.9",
+                            "buildVersion": "106",
+                            "date": "2026-11-27T23:27:17Z",
+                            "localizedDescription": "Legacy release",
+                            "downloadURL": "https://example.com/Kodoku-v0.9-kodoku.106.ipa",
+                            "size": 15339235,
+                            "minOSVersion": "15.0",
+                        }
+                    ],
+                }
+            ],
+        }
+        new_entry = {
+            "version": "0.9",
+            "buildVersion": "107",
+            "date": "2026-11-28T01:00:00Z",
+            "localizedDescription": "Dokuha release",
+            "downloadURL": "https://example.com/Dokuha-v0.9-dokuha.107.ipa",
+            "size": 15400000,
+            "minOSVersion": "15.0",
+        }
+        merged = updater.merge_source_json(
+            template, legacy_existing, new_entry, "io.github.sfai05.Dokuha"
+        )
+        self.assertEqual(merged["identifier"], "io.github.sfai05.dokuha.source")
+        self.assertEqual(merged["featuredApps"], ["io.github.sfai05.Dokuha"])
+        self.assertEqual(merged["apps"][0]["bundleIdentifier"], "io.github.sfai05.Dokuha")
+        self.assertEqual(merged["apps"][0]["versions"], [new_entry])
 
     def test_merge_bundle_id_mismatch_raises(self) -> None:
         with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
@@ -229,7 +272,7 @@ class TestUpdateSideStoreSource(unittest.TestCase):
                     "--ipa",
                     ipa_path,
                     "--download-url",
-                    "https://github.com/sfai05/Aidoku/releases/download/v0.9-kodoku.105/Kodoku-v0.9-kodoku.105.ipa",
+                    "https://github.com/sfai05/Aidoku/releases/download/v0.9-dokuha.105/Dokuha-v0.9-dokuha.105.ipa",
                     "--date",
                     "2026-11-27T12:00:00Z",
                     "--notes-file",
