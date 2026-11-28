@@ -1,15 +1,42 @@
 {
-  "fill" : {
-    "solid" : "srgb:0.12157,0.41961,1.00000,1.00000"
-  },
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "srgb:0.98039,0.98039,0.98039,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "srgb:0.07059,0.07843,0.09804,1.00000"
+      }
+    },
+    {
+      "appearance" : "tinted",
+      "value" : {
+        "solid" : "srgb:0.07059,0.07843,0.09804,1.00000"
+      }
+    }
+  ],
   "groups" : [
     {
       "layers" : [
         {
-          "glass" : true,
-          "hidden" : false,
-          "image-name" : "読.svg",
-          "name" : "読",
+          "glass" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "light.png"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "dark.png"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "dark.png"
+            }
+          ],
+          "name" : "Dokuha",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
@@ -20,12 +47,12 @@
         }
       ],
       "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+        "kind" : "none",
+        "opacity" : 0
       },
       "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+        "enabled" : false,
+        "value" : 0
       }
     }
   ],
