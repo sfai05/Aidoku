@@ -28,11 +28,22 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
     var pillButtons: [UIButton] { orderedPillButtons }
     var isQuickJumpButtonHidden: Bool { quickJumpContainerView.isHidden }
     var quickJumpMenu: UIMenu? { quickJumpButton.menu }
+    var currentScrollOffsetX: CGFloat { scrollView.contentOffset.x }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         configureViews()
         constrainViews()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleContentSizeCategoryDidChange),
+            name: UIContentSizeCategory.didChangeNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     required init?(coder: NSCoder) {
@@ -42,7 +53,9 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
     func configure(with snapshot: LibraryCategoryBarSnapshot, animatedScroll: Bool = false) {
         guard snapshot != self.snapshot else { return }
 
+        let hadPreviousSnapshot = self.snapshot != nil
         let selectionChanged = self.snapshot?.selectedIndexPath != snapshot.selectedIndexPath
+        let shouldAnimateScroll = animatedScroll && hadPreviousSnapshot
         self.snapshot = snapshot
 
         quickJumpContainerView.isHidden = !snapshot.shouldShowQuickJumpButton
@@ -53,10 +66,10 @@ final class LibraryCategoryBarHeaderView: UICollectionReusableView {
 
         if selectionChanged {
             pendingScrollToSelected = true
-            pendingScrollAnimated = animatedScroll
+            pendingScrollAnimated = shouldAnimateScroll
             if scrollView.bounds.width > 0 {
                 layoutIfNeeded()
-                scrollSelectedPillIntoView(animated: animatedScroll)
+                scrollSelectedPillIntoView(animated: shouldAnimateScroll)
             }
         }
     }
@@ -85,6 +98,7 @@ private extension LibraryCategoryBarHeaderView {
 
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = true
+        scrollView.contentInsetAdjustmentBehavior = .never
         outerStackView.addArrangedSubview(scrollView)
 
         pillStackView.axis = .horizontal
@@ -261,12 +275,22 @@ private extension LibraryCategoryBarHeaderView {
         delegate?.optionSelected(indexPath)
     }
 
+    @objc func handleContentSizeCategoryDidChange() {
+        guard let snapshot else { return }
+        rebuildPills(from: snapshot)
+        if scrollView.bounds.width > 0 {
+            layoutIfNeeded()
+            scrollSelectedPillIntoView(animated: false)
+        }
+    }
+
     func scrollSelectedPillIntoView(animated: Bool) {
-        guard let selectedPillButton, scrollView.bounds.width > 0 else { return }
+        guard scrollView.bounds.width > 0 else { return }
+        pendingScrollToSelected = false
+        guard let selectedPillButton else { return }
         let pillFrame = scrollView.convert(selectedPillButton.bounds, from: selectedPillButton)
         let maxOffsetX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
         let targetX = min(max(0, pillFrame.midX - scrollView.bounds.width / 2), maxOffsetX)
         scrollView.setContentOffset(CGPoint(x: targetX, y: 0), animated: animated)
-        pendingScrollToSelected = false
     }
 }

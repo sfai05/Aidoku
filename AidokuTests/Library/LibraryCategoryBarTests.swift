@@ -194,6 +194,20 @@ import UIKit
         )
         #expect(fiveItems.totalItemCount == 5)
         #expect(fiveItems.shouldShowQuickJumpButton)
+
+        let lockedFilterGroupOnly = LibraryCategoryBarBuilder.build(
+            LibraryCategoryBarInput(
+                showUncategorized: false,
+                categories: [],
+                filterGroupTitles: ["Private Group"],
+                currentCategory: "Private Group",
+                lockLibraryEnabled: true,
+                lockedCategories: ["Private Group"]
+            )
+        )
+        let privateGroupItem = lockedFilterGroupOnly.allItems.first { $0.title == "Private Group" }
+        #expect(privateGroupItem?.indexPath == IndexPath(row: 0, section: 1))
+        #expect(privateGroupItem?.isLocked == true)
     }
 
     @MainActor
@@ -250,6 +264,26 @@ import UIKit
         #expect(header.pillButtons.count == 6)
         #expect(header.pillButtons[5].isSelected)
         #expect(header.pillButtons[5].accessibilityLabel == "Ongoing")
+
+        let menuActions = (header.quickJumpMenu?.children.compactMap { $0 as? UIMenu } ?? [])
+            .flatMap { $0.children.compactMap { $0 as? UIAction } }
+        #expect(menuActions.first { $0.title == "Ongoing" }?.state == .on)
+        #expect(menuActions.first { $0.title == "Action" }?.state == .off)
+
+        let longCategories = (1...10).map { "Category \($0) Collection" }
+        let overflowSnapshot = LibraryCategoryBarBuilder.build(
+            LibraryCategoryBarInput(
+                showUncategorized: false,
+                categories: longCategories,
+                filterGroupTitles: [],
+                currentCategory: longCategories.last,
+                lockLibraryEnabled: false,
+                lockedCategories: []
+            )
+        )
+        header.configure(with: overflowSnapshot)
+        header.layoutIfNeeded()
+        #expect(header.currentScrollOffsetX > 0)
     }
 
     @MainActor

@@ -57,6 +57,7 @@ struct LibraryCategoryBarInput: Equatable, Sendable {
     let currentCategory: String?
     let lockLibraryEnabled: Bool
     let lockedCategories: [String]
+    /// Reserved hook for filtering hidden/secret categories while preserving underlying section/row indices.
     var hiddenCategories: Set<String> = []
 }
 
