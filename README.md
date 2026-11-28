@@ -22,6 +22,15 @@
 
 ## What's Different from Aidoku
 
+### TL;DR
+
+- **Free Apple ID & SideStore Ready:** Compiles and runs on a Personal Team with automated unsigned `.ipa` releases and a SideStore/AltStore `apps.json` feed.
+- **Self-Hostable PocketBase Sync:** Replaces CloudKit with an inspectable snapshot + smart-merge engine, Keychain-backed auth, 60s default debounce, and foreground/background flush.
+- **Sync Dashboard & Recovery Tools:** Adds a dedicated PocketBase Sync dashboard, One-Time Setup Wizard, `pb_schema.json` import, sync logs viewer, and rollback/force-sync tools.
+- **Metadata Editing & MangaBaka Pull:** Edit manga fields in-app with sync-preserved `EditedKeys`, or selectively pull multi-language titles/synopses, AniList native staff, and volume covers.
+- **Hardened MangaBaka Tracking:** Adds long-lived Personal Access Token (`mb-...`) auth alongside stabilized OAuth refresh, decimal progress/score decoding, and `POST` 404 fallback.
+- **Redesigned Library Controls:** Replaces the dropdown with a one-tap scrollable category pill bar, adds a Filter & Sort sheet/popover with tri-state filters and active filter chips, and strengthens cover title contrast.
+
 ### Free Apple ID & SideStore / AltStore First
 
 - Removes paid Apple Developer entitlements (`aps-environment`, iCloud/CloudKit/Ubiquity containers, `com.apple.developer.user-fonts`) and removes `remote-notification` from `UIBackgroundModes` in `Info.plist` so builds sign, install, and run cleanly under a free Apple ID (Personal Team).
@@ -60,10 +69,6 @@
 - **One-Tap Category Pill Bar:** Replaces the two-tap `All ▾` dropdown with an edge-to-edge horizontally scrollable capsule bar featuring dynamic horizontal scroll edge fade, category lock icons, distinct Filter Group pill styling, and automatic scroll-to-selection. Removes the redundant in-library search bar in favor of the dedicated Search tab.
 - **Dedicated Filter & Sort Sheet:** Adds a top-bar Filter & Sort button opening a grouped-card SwiftUI sheet on iPhone (and an anchored popover on regular-width iPad) with live matching title count, a single-row horizontal Sort bar, tri-state Filter pills (include / exclude / clear), direct Content Rating pills, and expandable Sources & Categories cards.
 - **Active Filter Chips & Visual Polish:** Adds a non-overlapping active filter chips strip with horizontal scroll edge fade stacked below the category bar, a one-tap `Clear Filters` empty-state button, contrast-aware selected foregrounds, a strengthened multi-stop cover title scrim for bright cover artwork, safe-area-centered empty/locked state views, and iOS 26 floating tab bar bottom clearance.
-
-### Dokuha Branding & Monochrome Manga App Icon
-
-- Branded as **Dokuha** (`読破！` with `ドク` / `ハ` furigana) with a monochrome manga screentone app icon offering matched **Light**, **Dark**, and **Tinted** variants in `AppIcon.icon`, plus opaque sRGB fallback PNGs in `Assets.xcassets/AppIcon.appiconset` for SideStore and AltStore.
 
 ### Minimal, Isolated Fork Architecture
 
